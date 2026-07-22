@@ -1,0 +1,51 @@
+/* MMM-NexusDashboard/css/clock.css */
+
+.nexus-clock-card {
+  text-align: left;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 10px 0;
+}
+
+.clock-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.clock-time-wrapper {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.clock-time {
+  font-size: 4.5rem;
+  font-weight: 200;
+  letter-spacing: -2px;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.clock-ampm {
+  font-size: 1.5rem;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: #666666;
+  margin-left: 5px;
+}
+
+.clock-seconds {
+  font-size: 1.8rem;
+  font-weight: 300;
+  color: #444444;
+  min-width: 40px;
+}
+
+.clock-date {
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #888888;
+  margin-top: 10px;
+  letter-spacing: 0.5px;
+}

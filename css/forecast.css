@@ -1,0 +1,181 @@
+/* MMM-NexusDashboard/css/forecast.css */
+
+.nexus-forecast-card {
+  height: 100%;
+  flex-grow: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3rem 4rem;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* ---------- Current conditions ---------- */
+
+.nexus-forecast-current-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nexus-forecast-current-icon {
+  width: 140px;
+  height: 140px;
+}
+
+.nexus-forecast-current-temp {
+  font-size: 8rem;
+  font-weight: 200;
+  line-height: 1;
+}
+
+.nexus-forecast-current-summary {
+  font-size: 1.5rem;
+  color: #aaa;
+}
+
+/* ---------- Wind / humidity / precip / dewpoint stat row ---------- */
+
+.nexus-forecast-stat-row {
+  display: flex;
+  gap: 2.5rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.nexus-forecast-stat {
+  text-align: center;
+}
+
+.nexus-forecast-stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+.nexus-forecast-stat-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 2px;
+}
+
+/* ---------- Astronomy (moon phase + sun/moon rise-set) ---------- */
+
+.nexus-astronomy-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.nexus-astronomy-moon {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.nexus-moon-emoji {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.nexus-moon-phase-name {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.nexus-moon-illum {
+  font-size: 0.9rem;
+  color: #888;
+  margin-top: 2px;
+}
+
+.nexus-astronomy-times {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.nexus-astronomy-time-item {
+  text-align: center;
+}
+
+.nexus-astronomy-time-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.05em;
+}
+
+.nexus-astronomy-time-value {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ---------- Full multi-day strip (not capped at 5, unlike the sidebar card) ---------- */
+
+.nexus-forecast-full-strip {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+  flex: 1;
+  align-items: start;
+  min-height: 0;
+}
+
+.nexus-forecast-full-day-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 1rem 0.5rem;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.nexus-forecast-full-day-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.nexus-forecast-full-day-icon {
+  width: 56px;
+  height: 56px;
+}
+
+.nexus-forecast-full-day-summary {
+  font-size: 0.75rem;
+  color: #999;
+  min-height: 2.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.nexus-forecast-full-day-temps {
+  font-size: 1.2rem;
+  display: flex;
+  gap: 0.5rem;
+}

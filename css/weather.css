@@ -1,0 +1,156 @@
+/* MMM-NexusDashboard/css/weather.css */
+
+.nexus-weather-card {
+  color: #fff;
+  text-align: left;
+}
+
+/* Current Conditions */
+.nexus-current {
+  margin-bottom: 15px;
+}
+
+.nexus-current-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.nexus-temp-main {
+  font-size: 3.5rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.nexus-current-icon {
+  width: 52px;
+  height: 52px;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.nexus-summary {
+  font-size: 0.95rem;
+  color: #aaa;
+  margin-top: 4px;
+}
+
+.nexus-details {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 2px;
+}
+
+.nexus-watch-banner {
+  background: rgba(212, 143, 56, 0.2);
+  color: #f0a030;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+  border-left: 3px solid #f0a030;
+}
+
+/* Forecast Table */
+.nexus-forecast-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.nexus-forecast-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nexus-forecast-row:last-child {
+  border-bottom: none;
+}
+
+.nexus-forecast-day {
+  padding: 6px 10px 6px 0;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.nexus-forecast-icon-cell {
+  padding: 6px 5px;
+  width: 30px;
+  text-align: center;
+}
+
+.nexus-forecast-icon {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+.nexus-forecast-temp {
+  padding: 6px 0 6px 10px;
+  text-align: right;
+  font-weight: 500;
+}
+
+.temp-high {
+  color: #fff;
+  font-weight: bold;
+}
+
+.temp-low {
+  color: #777;
+  margin-left: 5px;
+}
+
+.nexus-forecast-text {
+  padding: 6px 10px;
+  color: #aaa;
+  font-size: 0.8rem;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 5-across daily forecast strip, shown under current conditions */
+.nexus-forecast-strip {
+  display: grid;
+  /* grid-template-columns is also set inline per-render to match the actual
+     number of days returned, so this is just a fallback. */
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nexus-forecast-day-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  min-width: 0;
+}
+
+.nexus-forecast-day-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.nexus-forecast-day-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.nexus-forecast-day-temps {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.85rem;
+}

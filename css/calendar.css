@@ -1,0 +1,277 @@
+/* MMM-NexusDashboard/css/calendar.css */
+
+.nexus-calendar-card {
+  text-align: left;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 10px 0;
+}
+
+.calendar-header {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #888;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 5px;
+}
+
+.calendar-event-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.calendar-event-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.event-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.event-date {
+  color: #0088ff; /* Pop color for date highlights */
+}
+
+.event-time {
+  color: #666;
+}
+
+.event-title {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #444;
+  font-size: 0.85rem;
+  padding: 20px 0;
+}
+
+.calendar-empty-icon {
+  font-size: 1.5rem;
+  margin-bottom: 5px;
+}
+
+/* ---------- Month grid ---------- */
+
+.calendar-month-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-bottom: 1.25rem;
+}
+
+.calendar-month-weekday {
+  font-size: 0.6rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  padding-bottom: 4px;
+}
+
+.calendar-month-cell {
+  min-height: 44px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 3px 3px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.calendar-month-cell.is-empty {
+  background: transparent;
+}
+
+.calendar-month-cell.is-today {
+  background: rgba(0, 136, 255, 0.18);
+  border: 1px solid rgba(0, 136, 255, 0.5);
+}
+
+.calendar-month-daynum {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.calendar-month-cell.is-today .calendar-month-daynum {
+  color: #4fb2ff;
+}
+
+.calendar-month-day-events {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.calendar-month-event-chip {
+  font-size: 0.55rem;
+  line-height: 1.15;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 136, 255, 0.15);
+  border-radius: 2px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-month-event-more {
+  font-size: 0.5rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- Agenda (Today/Tomorrow only) ---------- */
+
+.calendar-agenda-header {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #888;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.calendar-agenda-day-label {
+  list-style: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0088ff;
+  margin-top: 4px;
+}
+
+.calendar-agenda-day-label:first-child {
+  margin-top: 0;
+}
+
+/* ==========================================================================
+   Full-screen Calendar workspace override
+   Scoped to .nexus-section-calendar-full (the "calendar-full" section id
+   from modes.json) so the compact sidebar version on the Home workspace is
+   untouched. Splits the card into a two-column layout: month grid on the
+   left (bigger share of width), agenda on the right, both stretched to
+   fill the full screen height.
+   ========================================================================== */
+
+.nexus-section-calendar-full .nexus-calendar-card {
+  height: 100%;
+  flex-grow: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2.5rem 3rem;
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  grid-template-rows: auto auto 1fr;
+  column-gap: 3rem;
+  grid-template-areas:
+    "header header"
+    "mlabel alabel"
+    "mgrid  agrid";
+}
+
+.nexus-section-calendar-full .calendar-header {
+  grid-area: header;
+  font-size: 1.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.nexus-section-calendar-full .calendar-month-label {
+  grid-area: mlabel;
+  font-size: 1.1rem;
+}
+
+.nexus-section-calendar-full .calendar-agenda-header {
+  grid-area: alabel;
+  font-size: 1.1rem;
+}
+
+.nexus-section-calendar-full .calendar-month-grid {
+  grid-area: mgrid;
+  gap: 6px;
+  align-content: start;
+}
+
+.nexus-section-calendar-full .calendar-month-weekday {
+  font-size: 0.85rem;
+  padding-bottom: 8px;
+}
+
+.nexus-section-calendar-full .calendar-month-cell {
+  min-height: 90px;
+  padding: 8px 8px 6px;
+  gap: 3px;
+}
+
+.nexus-section-calendar-full .calendar-month-daynum {
+  font-size: 1rem;
+}
+
+.nexus-section-calendar-full .calendar-month-event-chip {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+}
+
+.nexus-section-calendar-full .calendar-month-event-more {
+  font-size: 0.7rem;
+}
+
+.nexus-section-calendar-full .calendar-event-list {
+  grid-area: agrid;
+  max-height: none; /* fill the full grid-row height instead of the 220px sidebar cap */
+  height: 100%;
+  gap: 16px;
+}
+
+.nexus-section-calendar-full .calendar-agenda-day-label {
+  font-size: 0.85rem;
+}
+
+.nexus-section-calendar-full .event-time {
+  font-size: 0.9rem;
+}
+
+.nexus-section-calendar-full .event-title {
+  font-size: 1.25rem;
+  white-space: normal; /* full screen has room to wrap long titles instead of ellipsis-truncating */
+}

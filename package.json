@@ -1,0 +1,8 @@
+{
+  "name": "mmm-nexusdashboard",
+  "version": "0.1.0",
+  "description": "A modern dashboard framework for MagicMirror²",
+  "main": "MMM-NexusDashboard.js",
+  "author": "Ken Christy",
+  "license": "MIT"
+}

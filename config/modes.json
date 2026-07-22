@@ -1,0 +1,57 @@
+{
+  "Home": {
+    "layout": "grid",
+    "gridTemplateColumns": "2fr 3fr",
+    "sections": [
+      {
+        "id": "sidebar",
+        "className": "column-sidebar",
+        "cards": ["ClockCard", "WeatherCard", "CalendarCard"]
+      },
+      {
+        "id": "main",
+        "className": "column-main-body",
+        "cards": ["ImmichCard"]
+      }
+    ]
+  },
+  "Weather": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr 1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "radar-feed",
+        "className": "emergency-column-radar",
+        "cards": ["RadarCard"]
+      },
+      {
+        "id": "alert-details",
+        "className": "emergency-column-instructions",
+        "cards": ["AlertCard"]
+      }
+    ]
+  },
+  "Calendar": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "calendar-full",
+        "cards": ["CalendarCard"]
+      }
+    ]
+  },
+  "Forecast": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "forecast-full",
+        "cards": ["ForecastCard"]
+      }
+    ]
+  }
+}

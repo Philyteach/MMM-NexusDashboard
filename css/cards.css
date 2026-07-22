@@ -1,0 +1,34 @@
+/* css/cards.css */
+.nexus-card {
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.25rem;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+  /* Don't rely solely on the parent's default stretch behavior — say it
+     explicitly, so this always fills the section's width regardless of
+     what a card's own CSS (e.g. transparent background, no border) does
+     to how visible that width actually is. */
+  width: 100%;
+  align-self: stretch;
+}
+
+.nexus-card-header {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.nexus-card-body {
+  flex-grow: 1;
+}

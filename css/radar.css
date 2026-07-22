@@ -1,0 +1,82 @@
+/* MMM-NexusDashboard/css/radar.css */
+
+.nexus-radar-card {
+  height: 100%;
+  flex-grow: 1;   /* .nexus-card (cards.css) has no flex-grow of its own, so a lone card in a section never actually consumes the section's available height without this */
+  min-height: 0;  /* lets it shrink below content size instead of overflowing the grid row */
+  padding: 0 !important; /* Allow the map to extend flush to the margins */
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0d0d0d;
+}
+
+.radar-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+
+#nexus-radar-map {
+  width: 100%;
+  height: 100%;
+  background: #0d0d0d;
+}
+
+/* Glassmorphism Timeline Tag overlay */
+.radar-timeline-tag {
+  position: absolute;
+  bottom: 15px;
+  left: 15px;
+  z-index: 1000;
+  background: rgba(10, 10, 10, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Pulsing Home Marker Animation */
+.radar-home-marker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.home-pulse {
+  width: 8px;
+  height: 8px;
+  background: #0088ff;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(0, 136, 255, 0.8);
+  position: relative;
+}
+
+.home-pulse::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 136, 255, 0.4);
+  animation: marker-pulse 1.8s infinite ease-out;
+}
+
+@keyframes marker-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}

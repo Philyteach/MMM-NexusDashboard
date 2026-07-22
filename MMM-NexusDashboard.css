@@ -1,0 +1,194 @@
+/* =========================================================
+   MMM-NexusDashboard - Landscape TV Theme
+   Optimized for 1080p / 4K wall displays
+   ========================================================= */
+
+/* Main dashboard container */
+.nexus-dashboard {
+    background: transparent;
+}
+
+/* =========================================================
+   General MagicMirror module styling
+   ========================================================= */
+.module {
+    margin-bottom: 15px;
+    position: relative;
+    z-index: 10;
+    text-shadow: 2px 2px 6px rgba(0,0,0,0.95);
+}
+
+.module-header {
+    font-size: 28px;
+    font-weight: 500;
+    color: #4fc3f7;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+}
+
+/* Foreground Smoked Glass Panels */
+.region .module {
+    background: rgba(15, 15, 20, 0.75); /* Deep dark "smoked" tint */
+    border-radius: 20px;
+    padding: 22px;
+    backdrop-filter: blur(18px) saturate(120%); /* Strong blur to separate from background photos */
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+    border: 1px solid rgba(255, 255, 255, 0.08); /* Subtle edge highlight to pop from backgrounds */
+    box-shadow: 0 12px 40px rgba(0,0,0,0.65);
+    box-sizing: border-box;
+}
+
+/* =========================================================
+   Clock
+   ========================================================= */
+.clock {
+    padding: 20px;
+}
+
+.clock .time {
+    font-size: 110px;
+    font-weight: 300;
+    letter-spacing: 5px;
+    text-shadow:
+        0 0 10px rgba(0,0,0,0.8),
+        0 0 20px rgba(0,0,0,0.8);
+}
+
+.clock .date {
+    font-size: 32px;
+    color: #dddddd;
+}
+
+/* =========================================================
+   Weather
+   ========================================================= */
+.weather, .MMM-OneCallWeather {
+    font-size: 22px;
+    text-shadow: 2px 2px 5px rgba(0,0,0,0.9);
+}
+
+.weather .weathericon {
+    font-size: 60px;
+}
+
+.weather .temperature {
+    font-size: 55px;
+    font-weight: 300;
+}
+
+.weather table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.weather td {
+    padding: 6px;
+    text-align: center;
+}
+
+.weather .forecast-day {
+    font-size: 22px;
+    color: #4fc3f7;
+}
+
+.weather .forecast-icon {
+    font-size: 55px;
+}
+
+.weather .forecast-high {
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.weather .forecast-low {
+    font-size: 24px;
+    color: #aaaaaa;
+}
+
+/* =========================================================
+   Nexus Dashboard Cards
+   ========================================================= */
+.nexus-dashboard .card {
+    background: rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.45);
+    backdrop-filter: blur(8px);
+}
+
+/* =========================================================
+   News / Alerts / Calendar
+   ========================================================= */
+.newsfeed { font-size: 24px; }
+.newsfeed .title { color:#ffffff; }
+.newsfeed .source { color:#4fc3f7; }
+
+.alert {
+    padding:12px;
+    border-radius:12px;
+    font-size:24px;
+    background: rgba(255,80,80,0.15);
+    border-left: 5px solid #ff5555;
+}
+
+.calendar { font-size:24px; }
+.calendar .title { color:#4fc3f7; }
+.calendar td { padding:8px; }
+
+.CX3A {
+    font-size: 28px !important;
+}
+
+.CX3A .event {
+    font-size: 28px !important;
+}
+
+.CX3A .title {
+    font-size: 34px !important;
+}
+
+.MMM-ImmichSlideShow {
+    filter: brightness(0.75);
+}
+
+/* =========================================================
+   Responsive scaling for large TVs
+   ========================================================= */
+@media (min-width: 3000px) {
+    .clock .time { font-size:180px; }
+    .module-header { font-size:42px; }
+    .weather { font-size:32px; }
+}
+
+@media (max-width: 1400px) {
+    .clock .time { font-size:80px; }
+    .module-header { font-size:22px; }
+}
+
+/* =========================================================
+   Layout Structure Overrides
+   ========================================================= */
+
+/* Keep the side columns tightly aligned out of the middle */
+.region.top.left, .region.bottom.left {
+    width: 25vw !important;
+}
+
+.region.top.right, .region.bottom.right {
+    width: 25vw !important;
+}
+/* Ensure the MagicMirror base layer is transparent so the background module shows */
+body {
+    background-color: transparent !important;
+}
+
+/* Ensure the main container doesn't block the background */
+.MMM-ImmichSlideShow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0; /* Keeps it strictly behind the text modules */
+}

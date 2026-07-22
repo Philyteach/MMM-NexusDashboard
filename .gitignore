@@ -1,0 +1,19 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Private configurations
+config/.env
+#config/dashboard.json
+#config/weather.json
+#config/alerts.json
+#config/calendar.json
+#config/server.json
+config/school.json
+config/travel.json
+
+# OS garbage
+.DS_Store
+Thumbs.db

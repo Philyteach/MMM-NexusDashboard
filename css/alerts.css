@@ -1,0 +1,125 @@
+/* MMM-NexusDashboard/css/alerts.css */
+
+.nexus-alert-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-grow: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  background: rgba(20, 20, 20, 0.8);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px;
+  overflow: hidden;
+}
+
+/* Fallback All-Clear Layout */
+.nexus-alert-card.all-clear {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.alert-clear-container .clear-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.alert-clear-container .clear-title {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #888;
+}
+
+.alert-clear-container .clear-subtitle {
+  font-size: 0.8rem;
+  color: #555;
+  margin-top: 5px;
+}
+
+/* Warning Header[cite: 6] */
+.nexus-alert-banner {
+  font-size: 1.4rem;
+  font-weight: 700;
+  padding: 15px;
+  border-radius: 6px;
+  text-align: center;
+  margin-bottom: 20px;
+  text-transform: uppercase;
+}
+
+/* Severity Color Variables */
+.nexus-alert-card.severity-warning {
+  border-color: #ff3333;
+  box-shadow: 0 0 15px rgba(255, 51, 51, 0.15);
+}
+.nexus-alert-card.severity-warning .nexus-alert-banner {
+  background: #ff3333;
+  color: #fff;
+}
+
+.nexus-alert-card.severity-watch {
+  border-color: #f0a030;
+  box-shadow: 0 0 15px rgba(240, 160, 48, 0.15);
+}
+.nexus-alert-card.severity-watch .nexus-alert-banner {
+  background: rgba(240, 160, 48, 0.2);
+  border: 1px solid #f0a030;
+  color: #f0a030;
+}
+
+/* Alert Body Panels[cite: 6] */
+.nexus-alert-body {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  gap: 15px;
+}
+
+.nexus-alert-body h3 {
+  font-size: 0.9rem;
+  color: #888;
+  letter-spacing: 1px;
+  margin: 0 0 8px 0;
+}
+
+.instruction-text {
+  font-size: 1.1rem;
+  line-height: 1.5;
+  color: #fff;
+  font-weight: 500;
+  margin: 0;
+}
+
+.alert-divider {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 5px 0;
+}
+
+.details-text {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: #aaa;
+  margin: 0;
+}
+
+/* Flashing Emergency Animation[cite: 6] */
+.animate-flash {
+  animation: flash-red 1.5s infinite;
+}
+
+@keyframes flash-red {
+  0%, 100% {
+    background-color: #ff3333;
+    box-shadow: 0 0 5px rgba(255, 51, 51, 0.5);
+  }
+  50% {
+    background-color: #990000;
+    box-shadow: 0 0 15px rgba(255, 51, 51, 0.8);
+  }
+}
