@@ -10,7 +10,6 @@ const path = require("path");
 
 const NodeHelper = require("node_helper");
 const fs = require("fs");
-const fetch = require("node-fetch");
 const { exec } = require("child_process");
 const formatter = require("./lib/formatter.js");
 
@@ -19,7 +18,28 @@ module.exports = NodeHelper.create({
     start: function() {
         console.log("[Nexus OS] Backend service helper started.");
         this.configPath = path.join(__dirname, "config");
-        
+
+        // Calendar locations/times, kept in sync by MMM-NexusDashboard.js's
+        // SYNC_CALENDAR_LOCATIONS notification every time the core calendar
+        // module broadcasts. This is separate from the on-demand
+        // GET_TRAVEL_TIMES payload because the prediction scheduler below
+        // has to run independent of whether anyone's looking at the Travel
+        // workspace - it can't wait for TravelCard to hand it agenda data.
+        this.calendarLocations = [];
+
+        // { "<location>|<startDate>": { eventTitle, location, appointmentTime,
+        //   baselineDurationSec, baselineCapturedAt, refinedDurationSec,
+        //   refinedCapturedAt, suggestedLeaveTime } }
+        this.travelPredictions = this.loadPredictions();
+
+        // Runs regardless of workspace/card visibility - checks every 15
+        // minutes whether any upcoming appointment needs its ~24h-ahead
+        // baseline reading captured, or its day-of refined reading taken.
+        // Also runs once immediately at startup in case the Pi rebooted
+        // mid-cycle and a check window was missed while it was down.
+        this.runPredictionScheduler();
+        setInterval(() => this.runPredictionScheduler(), 15 * 60 * 1000);
+
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
             const env = this.parseEnvFile();
@@ -41,7 +61,16 @@ module.exports = NodeHelper.create({
                 if (!response.ok) throw new Error("Failed to fetch image from Immich API.");
                 
                 res.setHeader("Content-Type", response.headers.get("content-type") || "image/jpeg");
-                response.body.pipe(res); // Stream the binary straight to the mirror UI
+                // node-fetch's response.body was a Node.js Readable stream,
+                // so .pipe(res) worked directly. Native fetch's response.body
+                // is a Web ReadableStream (per the Fetch spec) - no .pipe()
+                // method exists on it. Buffering the whole image and sending
+                // it in one shot is simplest and plenty fast for
+                // thumbnail-sized images; Node.js's Readable.fromWeb() is the
+                // streaming alternative if these images were ever large
+                // enough that buffering became a concern.
+                const imageBuffer = Buffer.from(await response.arrayBuffer());
+                res.send(imageBuffer);
             } catch (error) {
                 res.status(500).send(error.message);
             }
@@ -107,6 +136,10 @@ module.exports = NodeHelper.create({
 
             case "GET_TRAVEL_TIMES":
                 await this.handleTravelFetch(payload);
+                break;
+
+            case "SYNC_CALENDAR_LOCATIONS":
+                this.calendarLocations = payload || [];
                 break;
 
             default:
@@ -310,14 +343,108 @@ module.exports = NodeHelper.create({
         }
     },
 
+    // ---------- shared Routes API helpers (used by both the on-demand
+    // GET_TRAVEL_TIMES fetch and the background prediction scheduler) ----------
+
+    // Duration fields come back as strings like "312s" - strip the
+    // trailing "s" and parse to a number of seconds.
+    parseDurationSeconds: function(durationStr) {
+        if (!durationStr) return null;
+        const parsed = parseFloat(String(durationStr).replace("s", ""));
+        return Number.isNaN(parsed) ? null : parsed;
+    },
+
+    formatDurationText: function(seconds) {
+        if (seconds == null) return "N/A";
+        const minutes = Math.round(seconds / 60);
+        if (minutes < 60) return `${minutes} min`;
+        const hours = Math.floor(minutes / 60);
+        const remMinutes = minutes % 60;
+        return remMinutes > 0 ? `${hours} hr ${remMinutes} min` : `${hours} hr`;
+    },
+
+    // Classifies how much worse (or not) traffic-aware duration is versus
+    // the typical no-traffic baseline. Thresholds are a starting point, not
+    // a Google-provided standard - tune to taste once you've watched it
+    // against a few real commutes.
+    classifyTraffic: function(durationSec, staticDurationSec) {
+        if (durationSec == null || staticDurationSec == null || staticDurationSec === 0) return null;
+        const ratio = durationSec / staticDurationSec;
+        const deltaMinutes = Math.round((durationSec - staticDurationSec) / 60);
+        let condition;
+        if (ratio <= 1.05) condition = "light";
+        else if (ratio <= 1.25) condition = "moderate";
+        else condition = "heavy";
+        return { condition, deltaMinutes };
+    },
+
+    formatToll: function(tollInfo) {
+        const price = tollInfo?.estimatedPrice?.[0];
+        if (!price) return null;
+        const units = parseInt(price.units || "0", 10);
+        const cents = Math.round((price.nanos || 0) / 1e7); // nanos -> hundredths
+        const amount = (units + cents / 100).toFixed(2);
+        return `${price.currencyCode || "$"} ${amount} toll`;
+    },
+
+    // Single shared call point for the Routes API computeRouteMatrix
+    // endpoint. Returns the raw elements array Google sends back (one
+    // element per origin*destination pair, tagged with destinationIndex).
+    callRouteMatrix: async function(homeAddress, destinations, apiKey) {
+        const requestBody = {
+            origins: [{ waypoint: { address: homeAddress } }],
+            destinations: destinations.map(dest => ({ waypoint: { address: dest } })),
+            travelMode: "DRIVE",
+            routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+            // No departureTime here on purpose: omitting it defaults to
+            // "now" server-side. Setting it explicitly via
+            // new Date().toISOString() is a race condition - by the time
+            // the request reaches Google (network latency, Pi clock
+            // precision), that timestamp can read as already in the
+            // past, which Google rejects outright ("Timestamp must be
+            // set to a future time.").
+            extraComputations: ["TOLLS"]
+        };
+
+        const response = await fetch("https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": apiKey,
+                "X-Goog-FieldMask": "originIndex,destinationIndex,status,condition,distanceMeters,duration,staticDuration,travelAdvisory.tollInfo,fallbackInfo"
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => "");
+            throw new Error(`Routes API returned status ${response.status}: ${errBody.slice(0, 200)}`);
+        }
+
+        return await response.json();
+    },
+
     /**
      * Fetches live, traffic-aware drive times from HOME_ADDRESS to both
      * configured commutes (COMMUTE_1_DEST / COMMUTE_2_DEST) plus any
      * calendar-agenda locations the front end sends over. All destinations
-     * go into a single Distance Matrix request (one origin x N
+     * go into a single Routes API computeRouteMatrix request (one origin x N
      * destinations = N elements billed) rather than one request per
      * destination, to make the free-tier math in the Travel card's header
      * comment actually hold.
+     *
+     * Uses the modern Routes API (computeRouteMatrix) rather than legacy
+     * Distance Matrix - same batching/billing model, but the response
+     * includes both `duration` (traffic-aware) and `staticDuration` (typical,
+     * no-traffic baseline) for free in the same call, which is what lets us
+     * classify traffic as light/moderate/heavy without any extra requests.
+     * Toll estimates (extraComputations: ["TOLLS"]) are also included at no
+     * extra element cost, since they're still part of the same matrix call.
+     * Fuel consumption and per-road traffic detail are deliberately NOT used
+     * here - those only exist on the single-origin computeRoutes method,
+     * which would mean one API call per destination instead of one call
+     * covering all of them, breaking the batching this whole card is built
+     * around.
      */
     handleTravelFetch: async function(payload) {
         const env = this.parseEnvFile();
@@ -342,43 +469,185 @@ module.exports = NodeHelper.create({
         }
 
         try {
-            const params = new URLSearchParams({
-                origins: homeAddress,
-                destinations: allDestinations.join("|"),
-                departure_time: "now",
-                traffic_model: "best_guess",
-                key: apiKey
-            });
-
-            const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
-            if (!response.ok) throw new Error(`Distance Matrix API returned status ${response.status}`);
-
-            const data = await response.json();
-            if (data.status !== "OK") throw new Error(`Distance Matrix API status: ${data.status}`);
-
-            const elements = data.rows?.[0]?.elements || [];
+            const elements = await this.callRouteMatrix(homeAddress, allDestinations, apiKey);
             const results = {};
 
-            allDestinations.forEach((dest, i) => {
-                const el = elements[i];
-                if (!el || el.status !== "OK") {
-                    results[dest] = { status: el?.status || "UNKNOWN" };
+            (elements || []).forEach(el => {
+                const dest = allDestinations[el.destinationIndex];
+                if (!dest) return;
+
+                if (el.condition !== "ROUTE_EXISTS" || el.status?.code) {
+                    results[dest] = { status: el.status?.message || el.condition || "UNKNOWN" };
                     return;
                 }
+
+                const durationSec = this.parseDurationSeconds(el.duration);
+                const staticDurationSec = this.parseDurationSeconds(el.staticDuration);
+                const traffic = this.classifyTraffic(durationSec, staticDurationSec);
+                const tollText = this.formatToll(el.travelAdvisory?.tollInfo);
+
                 results[dest] = {
-                    durationSec: el.duration_in_traffic?.value ?? el.duration?.value ?? null,
-                    durationText: el.duration_in_traffic?.text ?? el.duration?.text ?? "N/A",
-                    distanceText: el.distance?.text ?? "",
+                    durationSec: durationSec,
+                    durationText: this.formatDurationText(durationSec),
+                    distanceText: el.distanceMeters
+                        ? `${(el.distanceMeters / 1609.34).toFixed(1)} mi`
+                        : "",
+                    trafficCondition: traffic?.condition ?? null,
+                    trafficDeltaMinutes: traffic?.deltaMinutes ?? null,
+                    tollText: tollText,
+                    // Google fell back to a non-traffic-aware estimate for
+                    // this route (outage, unsupported area, etc.) - the
+                    // traffic badge above is a guess, not a real read, so
+                    // the front end tags it as such rather than showing it
+                    // with the same confidence as a normal result.
+                    isEstimate: !!el.fallbackInfo,
                     status: "OK"
                 };
             });
 
             this.sendSocketNotification("TRAVEL_TIMES_DATA", results);
         } catch (error) {
-            console.error("[Nexus Travel Helper] Distance Matrix fetch failure:", error.message);
+            console.error("[Nexus Travel Helper] Routes API fetch failure:", error.message);
             this.sendSocketNotification("TRAVEL_TIMES_ERROR", error.message);
         }
     },
+
+    // ---------- predictive appointment leave-time scheduler ----------
+    //
+    // The idea: for an appointment tomorrow, grab one drive-time reading at
+    // roughly the same time of day today as a baseline ("normal" drive time
+    // for that time slot). Then, on the day of, use that baseline to figure
+    // out roughly when you'd need to leave, and take one fresh reading
+    // around an hour before that estimated leave time to refine it into an
+    // actual suggested leave-by time. Two extra single-destination API calls
+    // per appointment (a handful of elements each), not a continuous poll -
+    // this runs independent of whether Travel is ever on screen.
+
+    loadPredictions: function() {
+        const predictionsPath = path.join(this.configPath, "travel.json");
+        if (!fs.existsSync(predictionsPath)) return {};
+        try {
+            return JSON.parse(fs.readFileSync(predictionsPath, "utf-8"));
+        } catch (error) {
+            console.error("[Nexus Travel Scheduler] Failed to read travel.json, starting fresh:", error.message);
+            return {};
+        }
+    },
+
+    savePredictions: function() {
+        const predictionsPath = path.join(this.configPath, "travel.json");
+        try {
+            fs.writeFileSync(predictionsPath, JSON.stringify(this.travelPredictions, null, 2), "utf-8");
+        } catch (error) {
+            console.error("[Nexus Travel Scheduler] Failed to write travel.json:", error.message);
+        }
+    },
+
+    // One single-destination lookup (1 element), used by the scheduler for
+    // both the baseline and refined checks - deliberately not batched with
+    // anything else, since these fire at arbitrary times unrelated to any
+    // on-screen poll cycle.
+    fetchSingleTravelTime: async function(homeAddress, destination, apiKey) {
+        const elements = await this.callRouteMatrix(homeAddress, [destination], apiKey);
+        const el = (elements || [])[0];
+        if (!el || el.condition !== "ROUTE_EXISTS" || el.status?.code) {
+            throw new Error(el?.status?.message || el?.condition || "No route found");
+        }
+        return this.parseDurationSeconds(el.duration);
+    },
+
+    runPredictionScheduler: async function() {
+        const env = this.parseEnvFile();
+        const apiKey = env.GOOGLE_MAPS_API_KEY;
+        const homeAddress = env.HOME_ADDRESS;
+        if (!apiKey || !homeAddress) return;
+
+        const now = new Date();
+        const events = this.calendarLocations || [];
+        const cushionMs = 60 * 60 * 1000; // 1hr "get ready to leave" buffer, matches the design as discussed
+        let changed = false;
+
+        for (const ev of events) {
+            const appointmentTime = new Date(parseInt(ev.startDate, 10));
+            if (Number.isNaN(appointmentTime.getTime())) continue;
+
+            const msUntil = appointmentTime - now;
+            // Ignore anything already past, or further out than 2 days -
+            // no point tracking predictions that far ahead.
+            if (msUntil <= 0 || msUntil > 48 * 60 * 60 * 1000) continue;
+
+            const key = `${ev.location}|${ev.startDate}`;
+            if (!this.travelPredictions[key]) {
+                this.travelPredictions[key] = {
+                    eventTitle: ev.title,
+                    location: ev.location,
+                    appointmentTime: appointmentTime.toISOString(),
+                    baselineDurationSec: null,
+                    baselineCapturedAt: null,
+                    refinedDurationSec: null,
+                    refinedCapturedAt: null,
+                    suggestedLeaveTime: null
+                };
+                changed = true;
+            }
+            const pred = this.travelPredictions[key];
+            const hoursUntil = msUntil / 3600000;
+
+            // 1. Baseline capture: one reading in the 23-25 hour window
+            // before the appointment (i.e. "about a day before, same-ish
+            // time"), captured once.
+            if (!pred.baselineCapturedAt && hoursUntil <= 25 && hoursUntil >= 23) {
+                try {
+                    const durationSec = await this.fetchSingleTravelTime(homeAddress, ev.location, apiKey);
+                    pred.baselineDurationSec = durationSec;
+                    pred.baselineCapturedAt = now.toISOString();
+                    changed = true;
+                    console.log(`[Nexus Travel Scheduler] Captured baseline for "${pred.eventTitle}": ${this.formatDurationText(durationSec)}`);
+                } catch (error) {
+                    console.error(`[Nexus Travel Scheduler] Baseline fetch failed for "${pred.eventTitle}":`, error.message);
+                }
+            }
+
+            // 2. Refined check: once a baseline exists, take one fresh
+            // reading about an hour before the estimated leave time
+            // (appointment time minus baseline drive time minus the get-
+            // ready cushion), then compute the actual suggested leave-by
+            // time from that fresh reading.
+            if (pred.baselineDurationSec != null && !pred.refinedCapturedAt) {
+                const estimatedLeaveTime = new Date(appointmentTime.getTime() - pred.baselineDurationSec * 1000 - cushionMs);
+                const checkTime = new Date(estimatedLeaveTime.getTime() - cushionMs);
+
+                if (now >= checkTime && now < appointmentTime) {
+                    try {
+                        const durationSec = await this.fetchSingleTravelTime(homeAddress, ev.location, apiKey);
+                        pred.refinedDurationSec = durationSec;
+                        pred.refinedCapturedAt = now.toISOString();
+                        pred.suggestedLeaveTime = new Date(appointmentTime.getTime() - durationSec * 1000 - cushionMs).toISOString();
+                        changed = true;
+                        console.log(`[Nexus Travel Scheduler] Refined leave-by for "${pred.eventTitle}": ${pred.suggestedLeaveTime}`);
+                    } catch (error) {
+                        console.error(`[Nexus Travel Scheduler] Refined fetch failed for "${pred.eventTitle}":`, error.message);
+                    }
+                }
+            }
+        }
+
+        // Clean up predictions for events that have already passed (plus a
+        // few hours' grace) so travel.json doesn't grow forever.
+        for (const key of Object.keys(this.travelPredictions)) {
+            const pred = this.travelPredictions[key];
+            if (new Date(pred.appointmentTime).getTime() < now.getTime() - 6 * 60 * 60 * 1000) {
+                delete this.travelPredictions[key];
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this.savePredictions();
+            this.sendSocketNotification("TRAVEL_PREDICTIONS_DATA", this.travelPredictions);
+        }
+    },
+
 
     /**
      * Executes localized system hardware overrides for severe threats.

@@ -53,5 +53,16 @@
         "cards": ["ForecastCard"]
       }
     ]
+  },
+  "Travel": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "travel-full",
+        "cards": ["TravelCard"]
+      }
+    ]
   }
 }

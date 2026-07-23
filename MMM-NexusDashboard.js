@@ -37,7 +37,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/AlertCard.js"),
             this.file("cards/RadarCard.js"),
             this.file("cards/ImmichCard.js"),
-            this.file("cards/CalendarCard.js")
+            this.file("cards/CalendarCard.js"),
+            this.file("cards/TravelCard.js")
         ];
     },
 
@@ -57,7 +58,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/calendar.css"),  
             this.file("css/immich.css"),    
             this.file("css/alerts.css"),    
-            this.file("css/server.css")     
+            this.file("css/server.css"),
+            this.file("css/travel.css")
         ];
     },
 
@@ -79,6 +81,7 @@ Module.register("MMM-NexusDashboard", {
         // it isn't silently dropped — see notificationReceived() and the
         // NEXUS_CONFIG_LOADED handler below.
         this.latestCalendarEvents = null;
+        this.latestWeatherData = null;
     },
 
     /**
@@ -143,8 +146,40 @@ Module.register("MMM-NexusDashboard", {
             // calendar module's next poll.
             this.latestCalendarEvents = payload;
             this.cardManager.instances["CalendarCard"]?.updateState(payload);
+
+            // The Travel prediction scheduler in node_helper.js runs
+            // independently of whether anyone's looking at the Travel
+            // workspace (it has to - the whole point is catching a
+            // same-time-tomorrow baseline reading and a day-of refined
+            // reading regardless of screen state). It needs its own copy
+            // of calendar locations/times to know what to check and when,
+            // since it can't reach into a card that might not even be
+            // instantiated right now.
+            const locatedEvents = (payload || [])
+                .filter(ev => ev.location && String(ev.location).trim().length > 0 && ev.startDate)
+                .map(ev => ({
+                    title: ev.title || "Event",
+                    location: String(ev.location).trim(),
+                    startDate: ev.startDate
+                }));
+            this.sendSocketNotification("SYNC_CALENDAR_LOCATIONS", locatedEvents);
         }
         
+        // Lets anything on the standard MagicMirror notification bus ask for
+        // a workspace switch - MMM-Remote-Control's custom menu / REST API
+        // right now, and the CYD remote later, since both just need to fire
+        // a notification with { workspace: "Travel" } (etc.) as the payload.
+        // This is the only external entry point into transitionWorkspace();
+        // without it, nothing outside this module's own weather automation
+        // can ever change the active workspace.
+        if (notification === "NEXUS_SWITCH_WORKSPACE") {
+            if (payload && payload.workspace) {
+                this.transitionWorkspace(payload.workspace, `External Switch (${sender?.name || "unknown"})`);
+            } else {
+                Log.warn("[Nexus Dashboard] NEXUS_SWITCH_WORKSPACE received with no workspace in payload.");
+            }
+        }
+
         // This is the bridge! It catches MagicMirror's background NOAA data
         // and pipes it right into your existing WeatherCard and AlertCard state loaders.
         if (notification === "WEATHER_UPDATED") {
@@ -188,6 +223,7 @@ Module.register("MMM-NexusDashboard", {
                 break;
 
             case "NEXUS_WEATHER_DATA":
+                this.latestWeatherData = payload;
                 this.cardManager.instances["WeatherCard"]?.updateState(payload);
                 this.cardManager.instances["ForecastCard"]?.updateState(payload);
                 this.cardManager.instances["AlertCard"]?.updateState(payload);
@@ -214,6 +250,18 @@ Module.register("MMM-NexusDashboard", {
 
             case "IMMICH_ERROR":
                 console.error("[Nexus Immich Card] Fetch failed:", payload);
+                break;
+
+            case "TRAVEL_TIMES_DATA":
+                this.cardManager.instances["TravelCard"]?.updateState(payload, null);
+                break;
+
+            case "TRAVEL_TIMES_ERROR":
+                this.cardManager.instances["TravelCard"]?.updateState(null, payload);
+                break;
+
+            case "TRAVEL_PREDICTIONS_DATA":
+                this.cardManager.instances["TravelCard"]?.updatePredictions(payload);
                 break;
 
             default:
@@ -341,6 +389,22 @@ Module.register("MMM-NexusDashboard", {
         });
 
         this.updateDom();
+
+        // Cards for the incoming workspace may have just been instantiated
+        // for the first time as part of the updateDom() call above (their
+        // start() runs, but start() only initializes empty state - it has
+        // no way to know about data that arrived before the card existed).
+        // Without this replay, a freshly-created ForecastCard/WeatherCard/
+        // AlertCard shows nothing until the next scheduled weather poll
+        // happens to land, which can be several minutes away. Same pattern
+        // already used for CalendarCard at boot in NEXUS_CONFIG_LOADED,
+        // just generalized here to fire on every workspace switch rather
+        // than only once at startup.
+        if (this.latestWeatherData) {
+            this.cardManager.instances["WeatherCard"]?.updateState(this.latestWeatherData);
+            this.cardManager.instances["ForecastCard"]?.updateState(this.latestWeatherData);
+            this.cardManager.instances["AlertCard"]?.updateState(this.latestWeatherData);
+        }
     },
 
     /**
