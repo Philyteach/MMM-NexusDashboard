@@ -7,7 +7,6 @@
  */
 // Load environment variables from the MagicMirror root directory
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "../../.env") });
 
 const NodeHelper = require("node_helper");
 const fs = require("fs");
@@ -104,6 +103,10 @@ module.exports = NodeHelper.create({
 
             case "GET_IMMICH_PHOTOS":
                 await this.handleImmichFetch();
+                break;
+
+            case "GET_TRAVEL_TIMES":
+                await this.handleTravelFetch(payload);
                 break;
 
             default:
@@ -304,6 +307,76 @@ module.exports = NodeHelper.create({
         } catch (error) {
             console.error("[Nexus Immich Helper] Error:", error.message);
             this.sendSocketNotification("IMMICH_ERROR", error.message);
+        }
+    },
+
+    /**
+     * Fetches live, traffic-aware drive times from HOME_ADDRESS to both
+     * configured commutes (COMMUTE_1_DEST / COMMUTE_2_DEST) plus any
+     * calendar-agenda locations the front end sends over. All destinations
+     * go into a single Distance Matrix request (one origin x N
+     * destinations = N elements billed) rather than one request per
+     * destination, to make the free-tier math in the Travel card's header
+     * comment actually hold.
+     */
+    handleTravelFetch: async function(payload) {
+        const env = this.parseEnvFile();
+        const apiKey = env.GOOGLE_MAPS_API_KEY;
+        const homeAddress = env.HOME_ADDRESS;
+
+        if (!apiKey || !homeAddress) {
+            this.sendSocketNotification("TRAVEL_TIMES_ERROR", "Missing GOOGLE_MAPS_API_KEY or HOME_ADDRESS in .env");
+            return;
+        }
+
+        const commuteDests = [env.COMMUTE_1_DEST, env.COMMUTE_2_DEST].filter(Boolean);
+        const agendaLocations = (payload?.agendaLocations || []).map(item => item.location);
+
+        // De-dupe in case a commute destination also happens to match an
+        // agenda location string exactly - avoids billing the same element twice.
+        const allDestinations = [...new Set([...commuteDests, ...agendaLocations])];
+
+        if (allDestinations.length === 0) {
+            this.sendSocketNotification("TRAVEL_TIMES_DATA", {});
+            return;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                origins: homeAddress,
+                destinations: allDestinations.join("|"),
+                departure_time: "now",
+                traffic_model: "best_guess",
+                key: apiKey
+            });
+
+            const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
+            if (!response.ok) throw new Error(`Distance Matrix API returned status ${response.status}`);
+
+            const data = await response.json();
+            if (data.status !== "OK") throw new Error(`Distance Matrix API status: ${data.status}`);
+
+            const elements = data.rows?.[0]?.elements || [];
+            const results = {};
+
+            allDestinations.forEach((dest, i) => {
+                const el = elements[i];
+                if (!el || el.status !== "OK") {
+                    results[dest] = { status: el?.status || "UNKNOWN" };
+                    return;
+                }
+                results[dest] = {
+                    durationSec: el.duration_in_traffic?.value ?? el.duration?.value ?? null,
+                    durationText: el.duration_in_traffic?.text ?? el.duration?.text ?? "N/A",
+                    distanceText: el.distance?.text ?? "",
+                    status: "OK"
+                };
+            });
+
+            this.sendSocketNotification("TRAVEL_TIMES_DATA", results);
+        } catch (error) {
+            console.error("[Nexus Travel Helper] Distance Matrix fetch failure:", error.message);
+            this.sendSocketNotification("TRAVEL_TIMES_ERROR", error.message);
         }
     },
 
