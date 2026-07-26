@@ -63,6 +63,7 @@ class ClockCard extends NexusCard {
                     <span class="clock-seconds">${this.secondsString}</span>
                 </div>
                 <div class="clock-date">${this.dateString}</div>
+             <div class="nexus-badge-slot nexus-badge-slot--bottom-right" data-badge-target="clock"></div>
             </div>
         `;
     }

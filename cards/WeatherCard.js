@@ -39,7 +39,7 @@ class WeatherCard extends NexusCard {
         const currentPeriod = this.weatherData.forecast[0];
         const temp = currentPeriod.temperature !== undefined ? Math.round(currentPeriod.temperature) : "--";
         const summary = currentPeriod.shortForecast || "No data available";
-
+        const tempLabel = currentPeriod.isDaytime ? "High" : "Low";
         // How many days to show is a config value (config/weather.json ->
         // maxForecastEntries), not hard-coded, per project Rule #2.
         const maxEntries = this.configManager.get("weather", "maxForecastEntries", 5);
@@ -66,7 +66,10 @@ class WeatherCard extends NexusCard {
             <div class="nexus-card-header">Weather</div>
             <div class="nexus-current">
                 <div class="nexus-current-row">
-                    <div class="nexus-temp-main">${temp}&deg;</div>
+            <div class="nexus-temp-main">
+                ${temp}&deg;
+                <span class="nexus-temp-label">${tempLabel}</span>
+            </div>
                     <div>
                         <div class="nexus-summary">${summary}</div>
                     </div>

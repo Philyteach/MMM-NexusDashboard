@@ -40,6 +40,14 @@ module.exports = NodeHelper.create({
         this.runPredictionScheduler();
         setInterval(() => this.runPredictionScheduler(), 15 * 60 * 1000);
 
+
+        // Aurora badge state, refreshed independently of screen/workspace -
+        // cheap Kp poll always runs; the heavier OVATION lookup only fires
+        // when Kp actually crosses the threshold worth telling anyone about.
+        this.auroraCache = { badgeVisible: false, kpValue: null, probability: null, updatedAt: null };
+        this.runAuroraCheck();
+        setInterval(() => this.runAuroraCheck(), 15 * 60 * 1000);
+
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
             const env = this.parseEnvFile();
@@ -120,8 +128,8 @@ module.exports = NodeHelper.create({
         switch (notification) {
             case "NEXUS_INIT":
                 this.loadAllConfigurations();
+                this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
                 break;
-
             case "GET_NEXUS_WEATHER":
                 await this.handleWeatherFetch(payload);
                 break;
@@ -287,6 +295,87 @@ module.exports = NodeHelper.create({
             this.sendSocketNotification("NEXUS_WEATHER_ERROR", { message: error.message });
         }
     },
+
+/**
+ * Cheap always-on check: NOAA's planetary K-index, a single 0-9 number
+ * updated roughly every 3 hours. Only when it crosses the configured
+ * threshold do we bother pulling the much heavier OVATION grid.
+ */
+runAuroraCheck: async function() {
+    try {
+        const kpResponse = await fetch("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json", {
+            headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" }
+        });
+        if (!kpResponse.ok) throw new Error("Kp index fetch failed");
+        const kpRows = await kpResponse.json();
+
+        // Row 0 is the header ["time_tag","Kp","a_running","station_count"] -
+        // the most recent reading is always the last row.
+
+            const latestRow = kpRows[kpRows.length - 1];
+            const kpValue = parseFloat(latestRow.Kp);
+        const env = this.parseEnvFile();
+        const threshold = parseFloat(env.AURORA_KP_THRESHOLD || "6");
+        console.log(`[Nexus Aurora] Checked: Kp=${kpValue} (threshold=${threshold})`);
+
+        if (Number.isNaN(kpValue) || kpValue < threshold) {
+            this.auroraCache = {
+                badgeVisible: false,
+                kpValue: Number.isNaN(kpValue) ? null : kpValue,
+                probability: null,
+                updatedAt: new Date().toISOString()
+            };
+            this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
+            return;
+        }
+
+        // Kp is high enough to be worth checking our actual location.
+        const lat = parseFloat(env.LATITUDE);
+        const lon = parseFloat(env.LONGITUDE);
+
+        const ovationResponse = await fetch("https://services.swpc.noaa.gov/json/ovation_aurora_latest.json", {
+            headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" }
+        });
+        if (!ovationResponse.ok) throw new Error("OVATION fetch failed");
+        const ovationData = await ovationResponse.json();
+
+        const probability = this.findNearestAuroraProbability(ovationData.coordinates, lat, lon);
+
+        this.auroraCache = {
+            badgeVisible: probability !== null && probability > 0,
+            kpValue: kpValue,
+            probability: probability,
+            updatedAt: new Date().toISOString()
+        };
+        this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
+        console.log(`[Nexus Aurora] Kp=${kpValue} crossed threshold, OVATION probability at our location: ${probability}%`);
+
+    } catch (error) {
+        console.error("[Nexus Aurora Helper] Check failed:", error.message);
+    }
+},
+
+// OVATION's grid uses 0-360 east-positive longitude, while .env's
+// LONGITUDE is stored the normal -180/180 way like every other lat/lon
+// in this file - convert before searching, or a Pennsylvania longitude
+// like -75 will silently fail to match anything near the ~285 entries
+// that actually represent it.
+findNearestAuroraProbability: function(coordinates, lat, lon) {
+    if (!coordinates || Number.isNaN(lat) || Number.isNaN(lon)) return null;
+    const targetLon = lon < 0 ? lon + 360 : lon;
+
+    let closest = null;
+    let closestDist = Infinity;
+    for (const point of coordinates) {
+        const [pointLon, pointLat, value] = point;
+        const dist = (pointLon - targetLon) ** 2 + (pointLat - lat) ** 2;
+        if (dist < closestDist) {
+            closestDist = dist;
+            closest = value;
+        }
+    }
+    return closest;
+},
 
     /**
      * Retrieve latest assets from Album or Library via Immich's search API.

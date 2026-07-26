@@ -38,7 +38,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/RadarCard.js"),
             this.file("cards/ImmichCard.js"),
             this.file("cards/CalendarCard.js"),
-            this.file("cards/TravelCard.js")
+            this.file("cards/TravelCard.js"),
+            this.file("cards/AuroraCard.js")
         ];
     },
 
@@ -59,7 +60,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/immich.css"),    
             this.file("css/alerts.css"),    
             this.file("css/server.css"),
-            this.file("css/travel.css")
+            this.file("css/travel.css"),
+            this.file("css/badges,css")
         ];
     },
 
@@ -82,6 +84,7 @@ Module.register("MMM-NexusDashboard", {
         // NEXUS_CONFIG_LOADED handler below.
         this.latestCalendarEvents = null;
         this.latestWeatherData = null;
+        this.latestAuroraData = null;
     },
 
     /**
@@ -244,6 +247,12 @@ Module.register("MMM-NexusDashboard", {
                 this.scheduleWeatherPoll(null, true);
                 break;
 
+            case "NEXUS_AURORA_DATA":
+                this.latestAuroraData = payload;
+                this.cardManager.instances["AuroraCard"]?.updateState(payload);
+                break;
+
+            case "IMMICH_PHOTOS_DATA":
             case "IMMICH_PHOTOS_DATA":
                 this.cardManager.instances["ImmichCard"]?.updateState(payload);
                 break;
@@ -405,8 +414,10 @@ Module.register("MMM-NexusDashboard", {
             this.cardManager.instances["ForecastCard"]?.updateState(this.latestWeatherData);
             this.cardManager.instances["AlertCard"]?.updateState(this.latestWeatherData);
         }
+        if (this.latestAuroraData) {
+            this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
+        }
     },
-
     /**
      * Revert dashboard to default configurations when conditions are clear
      */

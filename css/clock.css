@@ -2,6 +2,7 @@
 
 .nexus-clock-card {
   text-align: left;
+  position: relative;
   background: transparent;
   border: none;
   box-shadow: none;
