@@ -13,7 +13,7 @@ config/.env
 #config/server.json
 config/school.json
 config/travel.json
-
+arduino/NexusRemote/secrets.h
 # OS garbage
 .DS_Store
 Thumbs.db
