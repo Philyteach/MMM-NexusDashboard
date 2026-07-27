@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Cyan glow filter for high-visibility dark mirror accent -->
+    <filter id="flagGlow">
+      <feGaussianBlur stdDeviation="1" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Dark sky circular container -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#ff1744" stroke-width="1.5" />
+
+  <!-- Background Swirling Hurricane Spiral Symbol -->
+  <g opacity="0.25" stroke="#00e5ff" stroke-width="2" fill="none">
+    <path d="M 50,20 C 70,20 80,40 70,60 C 60,80 30,75 25,50 C 20,30 40,25 50,25" />
+    <circle cx="50" cy="50" r="4" fill="#00e5ff" />
+  </g>
+
+  <!-- Flagpole -->
+  <line x1="32" y1="15" x2="32" y2="85" stroke="#b0bec5" stroke-width="3" stroke-linecap="round" />
+  <circle cx="32" cy="14" r="3" fill="#ffca28" /> <!-- Gold Finial Top -->
+
+  <!-- TOP HURRICANE FLAG (Red Square with Black Inner Square) -->
+  <g transform="translate(33, 20)">
+    <!-- Red Outer Flag -->
+    <path d="M 0,0 Q 15,2 30,0 V 22 Q 15,24 0,22 Z" fill="#d50000" stroke="#ffffff" stroke-width="0.8"/>
+    <!-- Black Center Square -->
+    <rect x="10" y="6" width="10" height="10" fill="#111111" />
+  </g>
+
+  <!-- BOTTOM HURRICANE FLAG (Stacked - Designates Hurricane Force) -->
+  <g transform="translate(33, 46)">
+    <!-- Red Outer Flag -->
+    <path d="M 0,0 Q 15,2 30,0 V 22 Q 15,24 0,22 Z" fill="#d50000" stroke="#ffffff" stroke-width="0.8"/>
+    <!-- Black Center Square -->
+    <rect x="10" y="6" width="10" height="10" fill="#111111" />
+  </g>
+
+  <!-- Gale Force Wind Gust Lines in Foreground -->
+  <path d="M 12,78 Q 30,68 55,78 T 88,75" 
+        fill="none" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" filter="url(#flagGlow)"/>
+  <path d="M 18,85 Q 40,75 65,85 T 92,82" 
+        fill="none" stroke="#64b5f6" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+</svg>

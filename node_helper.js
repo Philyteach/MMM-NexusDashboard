@@ -13,6 +13,28 @@ const fs = require("fs");
 const { exec } = require("child_process");
 const formatter = require("./lib/formatter.js");
 
+// Maps an NWS event name to one of the hazard icons in assets/icons/.
+// Falls back to the generic "ebs" icon for anything unmapped rather than
+// silently showing nothing.
+function resolveWatchIcon(eventName) {
+    const name = (eventName || "").toLowerCase();
+    const iconMap = [
+        { match: "tornado", icon: "tornado" },
+        { match: "hurricane", icon: "hurricane" },
+        { match: "tropical storm", icon: "hurricane" },
+        { match: "blizzard", icon: "blizzard" },
+        { match: "ice storm", icon: "icestorm" },
+        { match: "flood", icon: "flood" },
+        { match: "thunderstorm", icon: "thunderstorm" },
+        { match: "severe", icon: "thunderstorm" },
+        { match: "gale", icon: "gale" },
+        { match: "heat", icon: "heat" },
+        { match: "fog", icon: "fog" }
+    ];
+    const found = iconMap.find(m => name.includes(m.match));
+    return found ? found.icon : "ebs";
+}
+
 module.exports = NodeHelper.create({
 
     start: function() {
@@ -245,6 +267,16 @@ module.exports = NodeHelper.create({
             }
 
             let activeAlert = null;
+            // Every currently-active WATCH, one entry per distinct hazard icon
+            // (a "Severe Thunderstorm Watch" and a "Tornado Watch" both active
+            // at once produces two badges; two differently-worded watches that
+            // both map to the same icon collapse into one). This is deliberately
+            // separate from the best/activeAlert logic below, which stays
+            // focused on picking the single highest-severity item for AlertCard
+            // and the workspace-switch automation - Warnings are not included
+            // here on purpose, since a Warning already gets the full-screen
+            // AlertCard/workspace treatment and doesn't need a small badge too.
+            const activeWatches = [];
             if (alertsData && alertsData.features && alertsData.features.length > 0) {
                 // Scan every active alert for this point rather than trusting
                 // features[0] — NWS does not guarantee severity ordering, and
@@ -256,6 +288,7 @@ module.exports = NodeHelper.create({
 
                 let best = null;
                 let bestScore = -1;
+                const seenWatchIcons = new Set();
 
                 alertsData.features.forEach(feature => {
                     const props = feature.properties;
@@ -275,6 +308,14 @@ module.exports = NodeHelper.create({
                             instruction: props.instruction
                         };
                     }
+
+                    if (alertType === "WATCH") {
+                        const iconKey = resolveWatchIcon(props.event || "");
+                        if (!seenWatchIcons.has(iconKey)) {
+                            seenWatchIcons.add(iconKey);
+                            activeWatches.push({ title: props.event, icon: iconKey });
+                        }
+                    }
                 });
 
                 activeAlert = best;
@@ -287,6 +328,7 @@ module.exports = NodeHelper.create({
                 // merges each day's daytime/nighttime periods into a single entry.
                 daily: forecastData ? formatter.formatDaily(forecastData.properties.periods) : [],
                 activeAlert: activeAlert,
+                activeWatches: activeWatches,
                 astronomy: astronomy
             });
 

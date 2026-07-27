@@ -44,3 +44,4 @@ if (window.MMM_NexusDashboard_CardManager) {
     window.MMM_NexusDashboard_CardManager.registerCard("AuroraCard", AuroraCard);
 }
 window.AuroraCard = AuroraCard;
+y

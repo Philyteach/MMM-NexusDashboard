@@ -5,6 +5,19 @@
   pointer-events: none; /* clicks pass through empty space */
   z-index: 5;
 }
+/* If .nexus-badge-slot doesn't already do this, it needs to lay multiple
+   badges out side by side rather than stacking/overlapping them. */
+.nexus-badge-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+ 
+.nexus-watch-badge {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
 .nexus-badge-slot > * {
   pointer-events: auto; /* the badge itself is still interactive if needed */
 }

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Define the gradient for the oppressive heat glow -->
+    <radialGradient id="heatAura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ff1744;stop-opacity:1" /> <!-- Warning Red -->
+      <stop offset="60%" style="stop-color:#ffea00;stop-opacity:0.8" /> <!-- Intense Yellow -->
+      <stop offset="100%" style="stop-color:#ffea00;stop-opacity:0" /> <!-- Fade Out -->
+    </radialGradient>
+  </defs>
+
+  <!-- Circular container background with heat glow effect -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="url(#heatAura)" stroke-width="3" />
+
+  <!-- The Blazing Sun (Central Radiating Source) -->
+  <circle cx="50" cy="35" r="15" fill="#ffea00"/>
+  <g stroke="#ffea00" stroke-width="3" stroke-linecap="round">
+    <line x1="50" y1="12" x2="50" y2="20" /> <!-- Top Ray -->
+    <line x1="50" y1="50" x2="50" y2="58" /> <!-- Bottom Ray -->
+    <line x1="27" y1="35" x2="35" y2="35" /> <!-- Left Ray -->
+    <line x1="65" y1="35" x2="73" y2="35" /> <!-- Right Ray -->
+    <line x1="32" y1="19" x2="38" y2="25" /> <!-- Angle Rays -->
+    <line x1="68" y1="19" x2="62" y2="25" />
+    <line x1="32" y1="51" x2="38" y2="45" />
+    <line x1="68" y1="51" x2="62" y2="45" />
+  </g>
+
+  <!-- The Bold Thermometer (Measurement Indicator) -->
+  <g transform="translate(0, 10)">
+    <!-- Tube -->
+    <rect x="46" y="25" width="8" height="50" rx="4" fill="#ffffff" stroke="#b0bec5" stroke-width="1.5"/>
+    <!-- Warning Red Liquid Filling (Very High) -->
+    <rect x="48" y="30" width="4" height="40" rx="2" fill="#ff1744"/>
+    <!-- Oppressive Red Bulb -->
+    <circle cx="50" cy="72" r="10" fill="#ff1744" stroke="#ffffff" stroke-width="2"/>
+    <!-- Mercury Highlight -->
+    <circle cx="48" cy="70" r="3" fill="#ffffff" opacity="0.5"/>
+  </g>
+</svg>

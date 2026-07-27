@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Wave Gradients for depth on dark background -->
+    <linearGradient id="waveFront" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d2ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0072ff;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="waveBack" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0052d4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4364f7;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Dark sky circular container -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#00d2ff" stroke-width="1.5" opacity="0.9" />
+
+  <!-- Heavy Rain Drops in Background -->
+  <path d="M 25,18 L 22,26 M 45,15 L 42,23 M 65,17 L 62,25 M 82,20 L 79,28" 
+        stroke="#64b5f6" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- Back Flood Wave -->
+  <path d="M 5,65 Q 25,52 50,65 T 95,65 V 95 H 5 Z" fill="url(#waveBack)" opacity="0.7"/>
+
+  <!-- The Ark -->
+  <g transform="translate(0, -2)">
+    <!-- Main Cabin Structure -->
+    <path d="M 36,46 H 64 V 35 L 50,26 L 36,35 Z" fill="#d7ccc8"/>
+    <!-- Pitch Roof -->
+    <path d="M 33,36 L 50,24 L 67,36 L 64,38 L 50,27 L 36,38 Z" fill="#ffcc80"/>
+    <!-- Cabin Window/Door -->
+    <rect x="46" y="36" width="8" height="10" rx="1" fill="#4e342e"/>
+    
+    <!-- Hull / Boat Base -->
+    <path d="M 22,46 H 78 L 70,62 H 30 Z" fill="#8d6e63"/>
+    <!-- Hull Trim Highlight -->
+    <path d="M 22,46 H 78 V 49 H 22 Z" fill="#bcaaa4"/>
+  </g>
+
+  <!-- Foreground Dynamic Surge Wave (Sweeping over lower hull) -->
+  <path d="M 2,74 Q 25,58 50,72 T 98,68 V 98 H 2 Z" fill="url(#waveFront)"/>
+  
+  <!-- Wave Foam/Crest Highlight -->
+  <path d="M 2,74 Q 25,58 50,72 T 98,68" 
+        fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+</svg>

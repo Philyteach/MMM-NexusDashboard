@@ -39,7 +39,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/ImmichCard.js"),
             this.file("cards/CalendarCard.js"),
             this.file("cards/TravelCard.js"),
-            this.file("cards/AuroraCard.js")
+            this.file("cards/AuroraCard.js"),
+            this.file("cards/WatchBadgeCard.js")
         ];
     },
 
@@ -61,7 +62,7 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/alerts.css"),    
             this.file("css/server.css"),
             this.file("css/travel.css"),
-            this.file("css/badges,css")
+            this.file("css/badges.css")
         ];
     },
 
@@ -85,6 +86,7 @@ Module.register("MMM-NexusDashboard", {
         this.latestCalendarEvents = null;
         this.latestWeatherData = null;
         this.latestAuroraData = null;
+        this.latestWatchData = null;
     },
 
     /**
@@ -227,9 +229,11 @@ Module.register("MMM-NexusDashboard", {
 
             case "NEXUS_WEATHER_DATA":
                 this.latestWeatherData = payload;
+                this.latestWatchData = payload.activeWatches;
                 this.cardManager.instances["WeatherCard"]?.updateState(payload);
                 this.cardManager.instances["ForecastCard"]?.updateState(payload);
                 this.cardManager.instances["AlertCard"]?.updateState(payload);
+                this.cardManager.instances["WatchBadgeCard"]?.updateState(payload.activeWatches);
                 this.evaluateWeatherAutomation(payload.activeAlert);
     
                 this.updateDom();
@@ -416,6 +420,12 @@ Module.register("MMM-NexusDashboard", {
         }
         if (this.latestAuroraData) {
             this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
+        }
+        // Replayed after Aurora on purpose: WatchBadgeCard's updateState()
+        // claims the shared badge slot when watches are active, which should
+        // win over whatever Aurora just rendered above.
+        if (this.latestWatchData) {
+            this.cardManager.instances["WatchBadgeCard"]?.updateState(this.latestWatchData);
         }
     },
     /**

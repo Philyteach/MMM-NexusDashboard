@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Intense Amber/Red Warning Glow -->
+    <filter id="emergencyGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Circular dark background with high-visibility amber border -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#ffab00" stroke-width="2" />
+
+  <!-- Radiating Emergency Broadcast Waves (Background) -->
+  <g fill="none" stroke="#ffab00" stroke-width="2" stroke-linecap="round" opacity="0.6">
+    <!-- Left Waves -->
+    <path d="M 22,35 A 35,35 0 0,0 22,65" stroke-dasharray="6,4"/>
+    <path d="M 14,25 A 45,45 0 0,0 14,75" opacity="0.4"/>
+    
+    <!-- Right Waves -->
+    <path d="M 78,35 A 35,35 0 0,1 78,65" stroke-dasharray="6,4"/>
+    <path d="M 86,25 A 45,45 0 0,1 86,75" opacity="0.4"/>
+  </g>
+
+  <!-- Bold Hazard Triangle -->
+  <path d="M 50,16 L 82,74 C 84,78 81,82 76,82 H 24 C 19,82 16,78 18,74 Z" 
+        fill="#ffab00" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"
+        filter="url(#emergencyGlow)"/>
+
+  <!-- Inner Exclamation Mark (High-contrast dark insert) -->
+  <!-- Upper bar -->
+  <path d="M 50,33 L 53,58 H 47 Z" fill="#112233" />
+  <!-- Bottom dot -->
+  <circle cx="50" cy="68" r="3.5" fill="#112233" />
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Circular dark background -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#78909c" stroke-width="1.5" />
+
+  <!-- Car Silhouette in Fog -->
+  <path d="M 35,60 L 42,50 H 58 L 65,60 H 72 V 68 H 28 V 60 Z" fill="#37474f" />
+  <circle cx="36" cy="68" r="4" fill="#212121" />
+  <circle cx="64" cy="68" r="4" fill="#212121" />
+
+  <!-- Beaming Headlights into Fog -->
+  <polygon points="28,62 5,55 5,75 28,66" fill="#fff59d" opacity="0.3" />
+  <polygon points="72,62 95,55 95,75 72,66" fill="#fff59d" opacity="0.3" />
+
+  <!-- Layered Fog Bands (Passing over vehicle and beams) -->
+  <path d="M 10,25 H 90 M 15,37 H 75 M 5,50 H 95 M 20,63 H 85 M 10,75 H 90" 
+        stroke="#cfd8dc" stroke-width="4" stroke-linecap="round" opacity="0.85" stroke-dasharray="12 8 20 6"/>
+</svg>
