@@ -107,6 +107,18 @@ Module.register("MMM-NexusDashboard", {
         // to work, but the registry (and its debug logging) is never actually used.
         window.MMM_NexusDashboard_CardManager = this.cardManager;
 
+        // AuroraCard and WatchBadgeCard render into another card's badge
+        // slot (data-badge-target="clock") rather than occupying their own
+        // grid cell, so they are deliberately never listed in modes.json's
+        // per-section "cards" arrays. WorkspaceManager only ever asks
+        // CardManager for cards that ARE listed there, so without this call
+        // neither card would ever be instantiated — this.instances[...]
+        // would stay undefined forever, silently no-op'ing every
+        // updateState() call from NEXUS_WEATHER_DATA/NEXUS_AURORA_DATA no
+        // matter how correct their own logic is.
+        this.cardManager.instantiateOverlay("AuroraCard");
+        this.cardManager.instantiateOverlay("WatchBadgeCard");
+
         // Request initial configs from node_helper.js
         this.sendSocketNotification("NEXUS_INIT", {
             startupWorkspace: this.activeWorkspace
@@ -233,10 +245,28 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["WeatherCard"]?.updateState(payload);
                 this.cardManager.instances["ForecastCard"]?.updateState(payload);
                 this.cardManager.instances["AlertCard"]?.updateState(payload);
-                this.cardManager.instances["WatchBadgeCard"]?.updateState(payload.activeWatches);
                 this.evaluateWeatherAutomation(payload.activeAlert);
     
-                this.updateDom();
+                // WatchBadgeCard doesn't own a grid cell - it injects its
+                // icons directly into ClockCard's data-badge-target slot via
+                // querySelector, outside the normal getDom() render cycle.
+                // this.updateDom() rebuilds ClockCard's DOM fresh (a new,
+                // empty badge slot div) but - unlike the Promise-returning
+                // function of the same name buried in MagicMirror core's
+                // own main.js - Module.prototype.updateDom() (what this
+                // actually calls) gives module code no real way to know
+                // when that rebuild has finished; there's no callback or
+                // usable promise here (confirmed - a prior attempt at
+                // `this.updateDom().then(...)` threw immediately with
+                // "Cannot read properties of undefined (reading 'then')").
+                // A short setTimeout is the pragmatic workaround: none of
+                // these updateDom() calls pass a speed/animation argument,
+                // so the swap should be effectively immediate, and 100ms
+                // gives comfortable margin without being visible as a delay.
+                setTimeout(() => {
+                    this.cardManager.instances["WatchBadgeCard"]?.updateState(payload.activeWatches);
+                }, 100);
+
                 this.scheduleWeatherPoll(payload.activeAlert);
                 break;
 
@@ -401,10 +431,8 @@ Module.register("MMM-NexusDashboard", {
             reason: reason
         });
 
-        this.updateDom();
-
         // Cards for the incoming workspace may have just been instantiated
-        // for the first time as part of the updateDom() call above (their
+        // for the first time as part of the updateDom() call below (their
         // start() runs, but start() only initializes empty state - it has
         // no way to know about data that arrived before the card existed).
         // Without this replay, a freshly-created ForecastCard/WeatherCard/
@@ -421,12 +449,24 @@ Module.register("MMM-NexusDashboard", {
         if (this.latestAuroraData) {
             this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
         }
+
+        this.updateDom();
+
+        // this.updateDom() (Module.prototype.updateDom) gives module code
+        // no completion callback or usable promise - confirmed via a
+        // console error when a prior attempt tried `.then()` on it. A
+        // short setTimeout is the pragmatic workaround, same as in the
+        // NEXUS_WEATHER_DATA handler above: none of these updateDom()
+        // calls pass a speed/animation argument, so the rebuild should be
+        // effectively immediate, and 100ms gives comfortable margin.
         // Replayed after Aurora on purpose: WatchBadgeCard's updateState()
-        // claims the shared badge slot when watches are active, which should
-        // win over whatever Aurora just rendered above.
-        if (this.latestWatchData) {
-            this.cardManager.instances["WatchBadgeCard"]?.updateState(this.latestWatchData);
-        }
+        // claims the shared badge slot when watches are active, which
+        // should win over whatever Aurora just rendered.
+        setTimeout(() => {
+            if (this.latestWatchData) {
+                this.cardManager.instances["WatchBadgeCard"]?.updateState(this.latestWatchData);
+            }
+        }, 100);
     },
     /**
      * Revert dashboard to default configurations when conditions are clear

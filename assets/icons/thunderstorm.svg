@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Cyan glow for the lightning -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Circular background -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#b0bec5" stroke-width="1" />
+
+  <!-- Heavy Cloud Masses -->
+  <path d="M 25,55 Q 10,55 10,40 Q 10,25 25,25 Q 30,10 45,10 Q 65,10 70,25 Q 90,25 90,42 Q 90,55 75,55 Z" fill="#455a64" />
+  <path d="M 30,50 Q 15,50 15,38 Q 15,28 25,28 Q 30,15 45,15 Q 60,15 65,28 Q 80,28 80,40 Q 80,50 70,50 Z" fill="#607d8b" />
+
+  <!-- Bold, Glowing Lightning Bolt -->
+  <path d="M 45,35 L 65,55 L 50,58 L 60,85 L 35,62 L 50,60 Z" 
+        fill="#ffeb3b" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"
+        filter="url(#glow)"/>
+
+  <!-- Rain Lines (Light Cyan) -->
+  <path d="M 20,60 L 17,75 M 35,63 L 32,78 M 70,60 L 67,75 M 82,58 L 79,73" 
+        stroke="#4dd0e1" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+</svg>

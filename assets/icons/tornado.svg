@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Circular container background -->
+  <circle cx="50" cy="50" r="48" fill="#112233" stroke="#b0bec5" stroke-width="1" />
+
+  <!-- Outer Swirling Turbulence Lines -->
+  <path d="M 50,12 A 38,38 0 1,1 12,50 A 38,38 0 0,1 50,12 Z" fill="none" stroke="#607d8b" stroke-width="2" stroke-dasharray="8 5" opacity="0.6"/>
+
+  <!-- Funnel Cloud (Linear Gradient for depth) -->
+  <defs>
+    <linearGradient id="tornadoCone" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#90a4ae;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#455a64;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#90a4ae;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <path d="M 25,20 C 40,15 60,15 75,20 L 55,85 C 52,90 48,90 45,85 Z" fill="url(#tornadoCone)" />
+
+  <!-- Inner Vortex detail line -->
+  <path d="M 35,25 Q 50,20 65,25 Q 55,55 50,85" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Swirling Debris near the base -->
+  <path d="M 30,75 L 25,80 L 32,83 Z" fill="#ffab91" transform="rotate(-15 30 75)"/> <!-- Debris 1 -->
+  <circle cx="70" cy="78" r="2.5" fill="#aed581"/> <!-- Debris 2 -->
+  <rect x="38" y="88" width="6" height="6" rx="1" fill="#81d4fa" transform="rotate(20 41 91)"/> <!-- Debris 3 -->
+
+  <!-- Bright Vortex Accent near ground -->
+  <ellipse cx="50" cy="85" rx="12" ry="5" fill="#4dd0e1" opacity="0.7"/>
+</svg>

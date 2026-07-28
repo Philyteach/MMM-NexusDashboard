@@ -10,20 +10,20 @@
 .nexus-badge-slot {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
  
 .nexus-watch-badge {
-  width: 28px;
-  height: 28px;
+  width: 96px;
+  height: 96px;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 .nexus-badge-slot > * {
   pointer-events: auto; /* the badge itself is still interactive if needed */
 }
 .nexus-aurora-badge {
-  width: 28px;
-  height: 28px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%; /* the icon's already circular, this just guards against any clipping edge cases */
 }
 .nexus-badge-slot--top-right    { top: 0.5rem; right: 0.5rem; }
