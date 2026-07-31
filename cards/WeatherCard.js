@@ -7,6 +7,7 @@ class WeatherCard extends NexusCard {
     start() {
         this.weatherData = null;
         this.errorMessage = null;
+        this.stationData = null;
     }
 
     // Triggered when backend node_helper fetches new weather data
@@ -14,6 +15,36 @@ class WeatherCard extends NexusCard {
         this.weatherData = data;
         this.errorMessage = errorMessage;
         this.updateDom();
+    }
+
+    // Triggered on NEXUS_STATION_DATA - live outdoor/indoor readings from
+    // the VEVOR weather station (polled via Tuya Cloud API in node_helper).
+    // Kept separate from updateState() since it's a different data source
+    // on its own poll cycle, not part of the NWS forecast payload.
+    updateStationState(reading) {
+        this.stationData = reading;
+        this.updateDom();
+    }
+
+    // Compact one-line live-conditions readout under the forecast summary.
+    // Only rendered once a station reading has actually arrived - stays
+    // silent rather than showing "--" placeholders before the first poll
+    // completes. Flags the reading as stale if node_helper hasn't heard
+    // from the station in a while (sensor offline, WiFi drop, etc.).
+    renderStationLine() {
+        if (!this.stationData || this.stationData.outdoorTempF == null) return "";
+
+        const ageMs = Date.now() - (this.stationData.lastUpdated || 0);
+        const isStale = ageMs > 5 * 60 * 1000 || !this.stationData.sensorOnline;
+
+        const temp = Math.round(this.stationData.outdoorTempF);
+        const humidity = this.stationData.outdoorHumidity;
+
+        return `
+            <div class="nexus-station-line${isStale ? ' nexus-station-stale' : ''}">
+                Now: ${temp}&deg;F${humidity != null ? ` &middot; ${humidity}% humidity` : ''}
+            </div>
+        `;
     }
 
     render() {
@@ -72,6 +103,7 @@ class WeatherCard extends NexusCard {
             </div>
                     <div>
                         <div class="nexus-summary">${summary}</div>
+                        ${this.renderStationLine()}
                     </div>
                 </div>
             </div>

@@ -12,6 +12,7 @@ const NodeHelper = require("node_helper");
 const fs = require("fs");
 const { exec } = require("child_process");
 const formatter = require("./lib/formatter.js");
+const TuyaWeatherClient = require("./lib/TuyaWeatherClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -69,6 +70,29 @@ module.exports = NodeHelper.create({
         this.auroraCache = { badgeVisible: false, kpValue: null, probability: null, updatedAt: null };
         this.runAuroraCheck();
         setInterval(() => this.runAuroraCheck(), 15 * 60 * 1000);
+
+        // Live outdoor/indoor readings from the VEVOR weather station, via
+        // the Tuya Cloud API (this unit is Smart Life/Tuya-ecosystem
+        // hardware, not the Ecowitt-firmware variant, so there's no local
+        // push - the station always reports to Tuya's cloud, and we poll
+        // that). Same "always on regardless of screen visibility" pattern
+        // as the aurora cache above. Rainfall is deliberately NOT surfaced
+        // yet - the raw `rainfall` dp didn't match the console's own
+        // "Today" figure when checked, so it needs to be re-verified
+        // against a real rain event before it's trustworthy.
+        this.stationCache = {
+            outdoorTempF: null,
+            indoorTempF: null,
+            outdoorHumidity: null,
+            indoorHumidity: null,
+            pressureInHg: null,
+            windSpeedRaw: null,
+            windGustRaw: null,
+            batteryStatus: null,
+            sensorOnline: false,
+            lastUpdated: null
+        };
+        this.startTuyaWeatherClient();
 
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
@@ -146,11 +170,42 @@ module.exports = NodeHelper.create({
         return config;
     },
 
+    /**
+     * Reads Tuya credentials from .env and starts the always-on station
+     * poller. Missing credentials disable station polling with a warning
+     * rather than crashing the whole helper - the rest of the dashboard
+     * (weather, calendar, travel, etc.) should keep working fine without it.
+     */
+    startTuyaWeatherClient: function() {
+        const env = this.parseEnvFile();
+        if (!env.TUYA_CLIENT_ID || !env.TUYA_CLIENT_SECRET || !env.TUYA_DEVICE_ID) {
+            console.warn("[Nexus Station Helper] Tuya credentials missing from .env - weather station polling disabled.");
+            return;
+        }
+
+        this.tuyaClient = new TuyaWeatherClient({
+            clientId: env.TUYA_CLIENT_ID,
+            clientSecret: env.TUYA_CLIENT_SECRET,
+            deviceId: env.TUYA_DEVICE_ID,
+            baseUrl: (env.TUYA_BASE_URL || "https://openapi.tuyaus.com").trim(),
+            pollIntervalMs: parseInt(env.TUYA_POLL_INTERVAL_MS || "60000", 10)
+        });
+
+        this.tuyaClient.onUpdate = (reading) => {
+            this.stationCache = reading;
+            console.log(`[Nexus Station] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
+            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+        };
+
+        this.tuyaClient.start();
+    },
+
     socketNotificationReceived: async function(notification, payload) {
         switch (notification) {
             case "NEXUS_INIT":
                 this.loadAllConfigurations();
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
+                this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
                 break;
             case "GET_NEXUS_WEATHER":
                 await this.handleWeatherFetch(payload);

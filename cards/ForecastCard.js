@@ -7,17 +7,27 @@
  * compact sidebar card doesn't have room for: wind, humidity, precip chance,
  * dewpoint, the full multi-day strip (not capped at 5), and moon phase /
  * illumination / rise-set times from the USNO astronomy fetch in
- * node_helper.js.
+ * node_helper.js. Also shows live outdoor/indoor readings from the VEVOR
+ * weather station (NEXUS_STATION_DATA, polled via Tuya Cloud API) alongside
+ * the NWS forecast data - a separate source on its own poll cycle, kept in
+ * its own panel rather than merged into the forecast stat row.
  */
 class ForecastCard extends NexusCard {
     start() {
         this.weatherData = null;
         this.errorMessage = null;
+        this.stationData = null;
     }
 
     updateState(data, errorMessage = null) {
         this.weatherData = data;
         this.errorMessage = errorMessage;
+        this.updateDom();
+    }
+
+    // Triggered on NEXUS_STATION_DATA.
+    updateStationState(reading) {
+        this.stationData = reading;
         this.updateDom();
     }
 
@@ -86,6 +96,47 @@ class ForecastCard extends NexusCard {
                         <div class="nexus-forecast-stat-value">${s.value}</div>
                     </div>
                 `).join("")}
+            </div>
+        `;
+    }
+
+    // Live readings from the VEVOR station itself, distinct from the NWS
+    // forecast stat row above (that's forecast data; this is your own
+    // sensor, on its own poll cycle). Only renders once a reading has
+    // actually arrived. Rain is deliberately NOT shown - the raw dp value
+    // didn't match the console's own "Today" figure when spot-checked, so
+    // it's not trustworthy yet (see TuyaWeatherClient.js's calibration notes).
+    renderStationPanel() {
+        if (!this.stationData || this.stationData.outdoorTempF == null) return "";
+
+        const s = this.stationData;
+        const ageMs = Date.now() - (s.lastUpdated || 0);
+        const isStale = ageMs > 5 * 60 * 1000 || !s.sensorOnline;
+        const ageText = ageMs < 60000
+            ? "just now"
+            : `${Math.round(ageMs / 60000)} min ago`;
+
+        const stats = [
+            { label: "Outdoor", value: `${Math.round(s.outdoorTempF)}\u00b0F` },
+            { label: "Indoor", value: `${Math.round(s.indoorTempF)}\u00b0F` },
+            { label: "Outdoor Humidity", value: `${s.outdoorHumidity}%` },
+            { label: "Pressure", value: `${s.pressureInHg.toFixed(2)} inHg` }
+        ];
+
+        return `
+            <div class="nexus-station-panel${isStale ? ' nexus-station-stale' : ''}">
+                <div class="nexus-station-panel-header">
+                    From your weather station
+                    <span class="nexus-station-panel-age">${isStale ? 'stale &middot; ' : ''}${ageText}</span>
+                </div>
+                <div class="nexus-station-panel-stats">
+                    ${stats.map(s => `
+                        <div class="nexus-forecast-stat">
+                            <div class="nexus-forecast-stat-label">${s.label}</div>
+                            <div class="nexus-forecast-stat-value">${s.value}</div>
+                        </div>
+                    `).join("")}
+                </div>
             </div>
         `;
     }
@@ -174,6 +225,7 @@ class ForecastCard extends NexusCard {
                 <div class="nexus-forecast-current-summary">${summary}</div>
                 ${this.renderStatRow(currentPeriod)}
             </div>
+            ${this.renderStationPanel()}
             ${this.renderAstronomy(this.weatherData.astronomy)}
             ${this.renderDailyStrip(this.weatherData.daily)}
         `;

@@ -41,6 +41,16 @@
   margin-top: 2px;
 }
 
+.nexus-station-line {
+  font-size: 0.8rem;
+  color: #6bd0ff;
+  margin-top: 4px;
+}
+
+.nexus-station-line.nexus-station-stale {
+  color: #666;
+}
+
 .nexus-watch-banner {
   background: rgba(212, 143, 56, 0.2);
   color: #f0a030;

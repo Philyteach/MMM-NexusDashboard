@@ -87,6 +87,7 @@ Module.register("MMM-NexusDashboard", {
         this.latestWeatherData = null;
         this.latestAuroraData = null;
         this.latestWatchData = null;
+        this.latestStationData = null;
     },
 
     /**
@@ -286,7 +287,24 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["AuroraCard"]?.updateState(payload);
                 break;
 
-            case "IMMICH_PHOTOS_DATA":
+            case "NEXUS_STATION_DATA":
+                // Live outdoor/indoor readings from the Tuya-polled VEVOR
+                // weather station. Cached the same way as the other
+                // latest* fields so a freshly-instantiated card (workspace
+                // switch, or a slow node_helper poll) can be replayed into
+                // immediately rather than waiting for the next update.
+                //
+                // NOTE: WeatherCard/ForecastCard don't have a
+                // station-specific handler yet - this just caches the data
+                // and calls updateStationState() if a card defines it
+                // (optional chaining no-ops harmlessly otherwise). Add
+                // updateStationState(reading) to whichever card(s) should
+                // actually render this once the UI side is built.
+                this.latestStationData = payload;
+                this.cardManager.instances["WeatherCard"]?.updateStationState?.(payload);
+                this.cardManager.instances["ForecastCard"]?.updateStationState?.(payload);
+                break;
+
             case "IMMICH_PHOTOS_DATA":
                 this.cardManager.instances["ImmichCard"]?.updateState(payload);
                 break;
@@ -448,6 +466,10 @@ Module.register("MMM-NexusDashboard", {
         }
         if (this.latestAuroraData) {
             this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
+        }
+        if (this.latestStationData) {
+            this.cardManager.instances["WeatherCard"]?.updateStationState?.(this.latestStationData);
+            this.cardManager.instances["ForecastCard"]?.updateStationState?.(this.latestStationData);
         }
 
         this.updateDom();
