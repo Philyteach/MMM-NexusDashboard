@@ -46,3 +46,23 @@
 .nexus-span-6  { grid-column: span 6; }
 .nexus-span-8  { grid-column: span 8; }
 .nexus-span-12 { grid-column: span 12; }
+
+/* Overflow safety net for stacked sidebar columns (e.g. Home's Clock +
+   Weather + Calendar column). This is a kiosk display - nothing scrolls,
+   so content that doesn't fit a fixed-height column previously just
+   rendered past the bottom of the physical screen with zero visual
+   indication anything was wrong (this is exactly what happened to
+   CalendarCard's agenda when WeatherCard's Right Now row was added).
+   The fix: nothing in .nexus-section is allowed to silently push a
+   sibling out of view. Cards that should always render in full opt in
+   via .nexus-no-shrink; everything else keeps flex's default shrink
+   behavior, and needs its own overflow:hidden (see .nexus-weather-card
+   in weather.css) so a genuine space crunch clips that one card's
+   own content visibly instead of spilling into its siblings. */
+.nexus-section > * {
+  min-height: 0;
+}
+
+.nexus-no-shrink {
+  flex-shrink: 0;
+}

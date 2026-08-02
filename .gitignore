@@ -14,6 +14,7 @@ config/.env
 config/school.json
 config/travel.json
 arduino/NexusRemote/secrets.h
+assets/icons/mascot/*.png
 # OS garbage
 .DS_Store
 Thumbs.db

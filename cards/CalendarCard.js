@@ -206,7 +206,7 @@ class CalendarCard extends NexusCard {
     }
 
     render() {
-        this.domElement.className = "nexus-card nexus-calendar-card";
+        this.domElement.className = "nexus-card nexus-calendar-card nexus-no-shrink";
 
         const eventsByDay = this.groupEventsByDay();
         const monthHtml = this.renderMonthGrid(eventsByDay);

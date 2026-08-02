@@ -1,0 +1,54 @@
+/* MMM-NexusDashboard/css/mascot.css
+ *
+ * Styling for the Right Now content (station temp, feels-like, wind,
+ * mascot) - lives inside the SAME row as the forecast high/low, using
+ * space that was already empty there, rather than a second row below.
+ * That's a deliberate simplification over the first version of this
+ * feature, which added a whole new bordered row and ended up pushing
+ * CalendarCard's agenda off the bottom of the screen.
+ */
+
+.nexus-right-now-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.nexus-right-now-group.nexus-station-stale {
+  opacity: 0.5;
+}
+
+/* Same big-number treatment as .nexus-temp-main (weather.css), just
+   color-shifted so it's visually distinct at a glance from the NOAA
+   forecast number sitting right next to it. Reuses the existing station
+   blue (#6bd0ff) already established by .nexus-station-line. */
+.nexus-station-temp {
+  color: #6bd0ff;
+}
+
+.nexus-current-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nexus-feels-like-line,
+.nexus-wind-line {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.nexus-mascot-img {
+  /* Matches the scale of .nexus-temp-main (3.5rem font-size) - it's
+     sitting in the same row as the big numbers now, so it should read
+     at the same visual weight as them. */
+  height: 3.5rem;
+  width: auto;
+  flex-shrink: 0;
+  /* Pushes the mascot to the right edge of the available row space,
+     independent of how much room nexus-summary/feels-like/wind text
+     actually take up. */
+  margin-left: auto;
+}

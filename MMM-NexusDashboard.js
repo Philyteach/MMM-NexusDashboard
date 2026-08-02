@@ -62,7 +62,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/alerts.css"),    
             this.file("css/server.css"),
             this.file("css/travel.css"),
-            this.file("css/badges.css")
+            this.file("css/badges.css"),
+            this.file("css/mascot.css")
         ];
     },
 

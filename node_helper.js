@@ -13,6 +13,7 @@ const fs = require("fs");
 const { exec } = require("child_process");
 const formatter = require("./lib/formatter.js");
 const TuyaWeatherClient = require("./lib/TuyaWeatherClient.js");
+const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -34,6 +35,37 @@ function resolveWatchIcon(eventName) {
     ];
     const found = iconMap.find(m => name.includes(m.match));
     return found ? found.icon : "ebs";
+}
+
+// Groups NWS's per-hour forecast periods into wider buckets for a compact
+// strip - default 8 buckets of 3 hours each covers a rolling 24h window
+// starting from the current hour (NWS's hourly endpoint already returns
+// periods starting at "now", so no date math needed to find the start).
+// Reuses the exact same nexus-forecast-strip/day-col markup and CSS the
+// old 5-day strip used - just more (narrower) columns and hour labels
+// instead of day names, so this doesn't add any new vertical footprint
+// versus what was already budgeted for that row.
+function formatHourlyBuckets(periods, bucketSizeHours = 3, bucketCount = 8) {
+    if (!periods || periods.length === 0) return [];
+    const buckets = [];
+    for (let i = 0; i < bucketCount; i++) {
+        const period = periods[i * bucketSizeHours];
+        if (!period) break;
+        const label = i === 0
+            ? "Now"
+            : new Date(period.startTime)
+                .toLocaleTimeString("en-US", { hour: "numeric" })
+                .replace(" ", "")
+                .toUpperCase();
+        buckets.push({
+            label: label,
+            icon: period.icon,
+            shortForecast: period.shortForecast,
+            temperature: period.temperature,
+            probabilityOfPrecipitation: period.probabilityOfPrecipitation?.value ?? null
+        });
+    }
+    return buckets;
 }
 
 module.exports = NodeHelper.create({
@@ -71,28 +103,30 @@ module.exports = NodeHelper.create({
         this.runAuroraCheck();
         setInterval(() => this.runAuroraCheck(), 15 * 60 * 1000);
 
-        // Live outdoor/indoor readings from the VEVOR weather station, via
-        // the Tuya Cloud API (this unit is Smart Life/Tuya-ecosystem
-        // hardware, not the Ecowitt-firmware variant, so there's no local
-        // push - the station always reports to Tuya's cloud, and we poll
-        // that). Same "always on regardless of screen visibility" pattern
-        // as the aurora cache above. Rainfall is deliberately NOT surfaced
-        // yet - the raw `rainfall` dp didn't match the console's own
-        // "Today" figure when checked, so it needs to be re-verified
-        // against a real rain event before it's trustworthy.
+        // Live outdoor/indoor readings from the VEVOR weather station.
+        // Two possible sources feed this cache - see
+        // startWeatherStationClients() below for how they're arbitrated.
+        // windDirDeg and rainMm are rtl_433-only (Tuya cloud never
+        // reported a trustworthy rainfall figure, and didn't expose wind
+        // direction at all) - they simply stay null when Tuya is the
+        // active source.
         this.stationCache = {
             outdoorTempF: null,
             indoorTempF: null,
             outdoorHumidity: null,
             indoorHumidity: null,
             pressureInHg: null,
-            windSpeedRaw: null,
-            windGustRaw: null,
+            windSpeedKnots: null,
+            windGustKnots: null,
+            windDirDeg: null,
+            rainMm: null,
+            lightIntensityKlux: null,
+            uvIndex: null,
             batteryStatus: null,
             sensorOnline: false,
             lastUpdated: null
         };
-        this.startTuyaWeatherClient();
+        this.startWeatherStationClients();
 
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
@@ -171,6 +205,34 @@ module.exports = NodeHelper.create({
     },
 
     /**
+     * Starts both weather-station data sources and arbitrates between
+     * them. rtl_433 is the preferred source once it proves itself - ~20s
+     * cadence versus Tuya cloud's ~20min lag is a real difference for a
+     * "Right Now" panel. But rtl_433 depends on a USB SDR dongle actually
+     * being plugged in and rtl_433 being installed/on PATH, either of
+     * which could be true in dev and not (yet) on a freshly cloned Pi -
+     * e.g. the school deployment. So: start both, let whichever reports
+     * first win, and once rtl_433 has proven itself within the grace
+     * window, stop Tuya polling so the two sources don't keep overwriting
+     * stationCache with different lag/precision. If rtl_433 never reports
+     * within the grace window, Tuya just keeps running indefinitely -
+     * degraded (slower) station data beats no station data.
+     */
+    startWeatherStationClients: function() {
+        const RTL_GRACE_MS = 2 * 60 * 1000;
+        this.rtlConfirmed = false;
+
+        this.startTuyaWeatherClient();
+        this.startRtlWeatherClient();
+
+        setTimeout(() => {
+            if (!this.rtlConfirmed) {
+                console.warn("[Nexus Station] No rtl_433 reading within the grace window - staying on Tuya cloud polling.");
+            }
+        }, RTL_GRACE_MS);
+    },
+
+    /**
      * Reads Tuya credentials from .env and starts the always-on station
      * poller. Missing credentials disable station polling with a warning
      * rather than crashing the whole helper - the rest of the dashboard
@@ -192,12 +254,59 @@ module.exports = NodeHelper.create({
         });
 
         this.tuyaClient.onUpdate = (reading) => {
-            this.stationCache = reading;
-            console.log(`[Nexus Station] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
+            // Once rtl_433 is confirmed live, Tuya's onUpdate is a no-op -
+            // the client keeps running (harmless, low resource use) but
+            // stops writing over the faster/more-detailed rtl_433 data.
+            // (Rather than calling this.tuyaClient.stop() here, which
+            // would assume TuyaWeatherClient has a stop() method - safer
+            // to just ignore its updates than risk calling something
+            // that might not exist.)
+            if (this.rtlConfirmed) return;
+            this.stationCache = { ...this.stationCache, ...reading };
+            console.log(`[Nexus Station][Tuya] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
             this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
         };
 
         this.tuyaClient.start();
+    },
+
+    /**
+     * Reads rtl_433 spawn settings from .env and starts the near-real-time
+     * station poller. RTL433_COMMAND/RTL433_ARGS let this be overridden
+     * per-deployment (e.g. a `docker run ...` wrapper) without code
+     * changes - see lib/RtlWeatherClient.js for why that matters. Missing
+     * env vars just fall back to the plain `rtl_433 -f 915M -F json`
+     * invocation that was confirmed working during testing.
+     */
+    startRtlWeatherClient: function() {
+        const env = this.parseEnvFile();
+        const command = env.RTL433_COMMAND || "rtl_433";
+        const args = env.RTL433_ARGS
+            ? env.RTL433_ARGS.split(" ").filter(Boolean)
+            : ["-f", env.RTL433_FREQUENCY || "915M", "-F", "json"];
+        const deviceId = env.RTL433_DEVICE_ID ? parseInt(env.RTL433_DEVICE_ID, 10) : null;
+
+        this.rtlClient = new RtlWeatherClient({ command, args, deviceId });
+
+        this.rtlClient.onUpdate = (reading) => {
+            if (!this.rtlConfirmed) {
+                console.log("[Nexus Station] rtl_433 confirmed reporting - now the active station source.");
+                this.rtlConfirmed = true;
+            }
+            // Merge rather than replace: rtl_433 doesn't hear indoor
+            // temp/humidity (that only exists on the console/Tuya side),
+            // so keep whatever Tuya last reported for those two fields
+            // instead of clobbering them with null every reading.
+            this.stationCache = {
+                ...this.stationCache,
+                ...reading,
+                indoorTempF: this.stationCache.indoorTempF,
+                indoorHumidity: this.stationCache.indoorHumidity
+            };
+            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+        };
+
+        this.rtlClient.start();
     },
 
     socketNotificationReceived: async function(notification, payload) {
@@ -283,6 +392,7 @@ module.exports = NodeHelper.create({
             const pointsData = await pointsResponse.json();
 
             const forecastGridUrl = pointsData.properties.forecast;
+            const forecastHourlyUrl = pointsData.properties.forecastHourly;
             const alertsUrl = `https://api.weather.gov/alerts/active?point=${lat},${lon}`;
 
             // USNO wants date + a local UTC-offset (in hours, east-positive) rather
@@ -294,13 +404,15 @@ module.exports = NodeHelper.create({
             const tzOffset = -(now.getTimezoneOffset() / 60);
             const astronomyUrl = `https://aa.usno.navy.mil/api/rstt/oneday?date=${astroDate}&coords=${lat},${lon}&tz=${tzOffset}`;
 
-            const [forecastRes, alertsRes, astronomyRes] = await Promise.all([
+            const [forecastRes, hourlyRes, alertsRes, astronomyRes] = await Promise.all([
                 fetch(forecastGridUrl, { headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" } }),
+                fetch(forecastHourlyUrl, { headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" } }),
                 fetch(alertsUrl, { headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" } }),
                 fetch(astronomyUrl, { headers: { "User-Agent": "MagicMirrorNexusDashboard/1.0" } })
             ]);
 
             const forecastData = forecastRes.ok ? await forecastRes.json() : null;
+            const hourlyData = hourlyRes.ok ? await hourlyRes.json() : null;
             const alertsData = alertsRes.ok ? await alertsRes.json() : null;
             const astronomyData = astronomyRes.ok ? await astronomyRes.json() : null;
 
@@ -381,7 +493,11 @@ module.exports = NodeHelper.create({
                 // Daily-aggregated forecast (one entry per calendar day, with high/low
                 // and a NOAA icon URL) built by lib/formatter.js's formatDaily(), which
                 // merges each day's daytime/nighttime periods into a single entry.
+                // Still used by ForecastCard on the dedicated Forecast workspace.
                 daily: forecastData ? formatter.formatDaily(forecastData.properties.periods) : [],
+                // Rolling 24h hourly forecast, bucketed into 3-hour groups - what
+                // WeatherCard's Home strip uses now instead of daily.
+                hourly: hourlyData ? formatHourlyBuckets(hourlyData.properties.periods) : [],
                 activeAlert: activeAlert,
                 activeWatches: activeWatches,
                 astronomy: astronomy

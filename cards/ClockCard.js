@@ -86,7 +86,7 @@ class ClockCard extends NexusCard {
         }
     }
     render() {
-        this.domElement.className = "nexus-card nexus-clock-card";
+        this.domElement.className = "nexus-card nexus-clock-card nexus-no-shrink";
         this.domElement.innerHTML = `
             <div class="clock-container">
                 <div class="clock-time-wrapper">
