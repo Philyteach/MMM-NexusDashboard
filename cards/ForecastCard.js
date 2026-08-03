@@ -116,12 +116,23 @@ class ForecastCard extends NexusCard {
             ? "just now"
             : `${Math.round(ageMs / 60000)} min ago`;
 
-        const stats = [
-            { label: "Outdoor", value: `${Math.round(s.outdoorTempF)}\u00b0F` },
-            { label: "Indoor", value: `${Math.round(s.indoorTempF)}\u00b0F` },
-            { label: "Outdoor Humidity", value: `${s.outdoorHumidity}%` },
-            { label: "Pressure", value: `${s.pressureInHg.toFixed(2)} inHg` }
-        ];
+        // rtl_433 only hears the outdoor sensor - indoorTempF/pressureInHg
+        // stay null under that source (see RtlWeatherClient.js), so each
+        // stat here is only included once it's actually present rather
+        // than crashing on null.toFixed()/etc.
+        const stats = [];
+        if (s.outdoorTempF != null) {
+            stats.push({ label: "Outdoor", value: `${Math.round(s.outdoorTempF)}\u00b0F` });
+        }
+        if (s.indoorTempF != null) {
+            stats.push({ label: "Indoor", value: `${Math.round(s.indoorTempF)}\u00b0F` });
+        }
+        if (s.outdoorHumidity != null) {
+            stats.push({ label: "Outdoor Humidity", value: `${s.outdoorHumidity}%` });
+        }
+        if (s.pressureInHg != null) {
+            stats.push({ label: "Pressure", value: `${s.pressureInHg.toFixed(2)} inHg` });
+        }
 
         return `
             <div class="nexus-station-panel${isStale ? ' nexus-station-stale' : ''}">
