@@ -7,7 +7,7 @@ A modern, card-based dashboard framework for [MagicMirror²](https://magicmirror
 ### Home (default)
 
 - **Clock** — current time
-- **Weather** (compact) — current conditions sidebar, labeled High/Low depending on whether the active NWS period is daytime or nighttime
+- **Weather** (compact) — current conditions sidebar, labeled High/Low depending on whether the active NWS period is daytime or nighttime, plus a live "Right Now" panel (temp/feels-like/wind + an outfit-suggestion mascot) sourced from a physical weather station — see [Weather Station](#weather-station-right-now-panel) and [Mascot Weather Character](#mascot-weather-character) below
 - **Calendar** (compact) — upcoming events sidebar
 - **Immich slideshow** — rotating photos pulled from a self-hosted [Immich](https://immich.app/) server
 - **Aurora badge** (conditional) — a small icon that appears in the Clock tile's unused corner space when geomagnetic activity makes aurora visibility plausible at your latitude. Invisible the rest of the time. See [Aurora Borealis Tracker](#aurora-borealis-tracker) below.
@@ -52,6 +52,74 @@ This cascading design means the expensive grid fetch only ever happens on nights
 **The badge-slot pattern:** rather than giving Aurora its own grid tile, it docks into a small reusable "slot" — a `.nexus-badge-slot` div with a `data-badge-target` attribute — that any card can opt into by adding one line of markup and `position: relative` to its own container. The Clock card hosts the first one (it has unused corner space), but the pattern is intentionally generic: any future pop-up indicator can target any card by name via config, with zero coupling between the host card and whatever badges dock into it. See `css/badges.css` and `cards/AuroraCard.js`.
 
 **Config:** add `AURORA_KP_THRESHOLD` to your `.env` (defaults to `6` if omitted) — see the setup table below.
+
+## Weather Station (Right Now panel)
+
+The Home workspace's compact Weather card includes a "Right Now" panel — current outdoor temp, feels-like, a wind label, and the outfit-suggestion mascot (see [Mascot Weather Character](#mascot-weather-character) below) — sourced from a physical VEVOR (YT60311) weather station. This is a separate data path from the NWS forecast that powers the rest of the Weather/Forecast cards.
+
+Two sources feed it, arbitrated in `node_helper.js`'s `startWeatherStationClients()`:
+
+- **Tuya Cloud API** (`lib/TuyaWeatherClient.js`) — the original integration. Polls Tuya's cloud roughly once a minute, but the station itself only syncs to Tuya's cloud every ~20 minutes, so that's the real freshness ceiling regardless of poll rate.
+- **rtl_433** (`lib/RtlWeatherClient.js`) — now the preferred source, and what replaced Tuya-only operation. An RTL-SDR USB dongle listens directly to the station's own 915MHz RF broadcast and decodes it locally with [rtl_433](https://github.com/merbanan/rtl_433), giving ~20-second-cadence readings with no cloud round-trip at all. It only hears the outdoor sensor's own broadcast, though — indoor temp/humidity and barometric pressure aren't part of that RF packet, so those two fields stay sourced from whatever Tuya last reported, merged in rather than left null.
+
+Both clients start at boot; whichever reports first wins. If rtl_433 proves itself within a 2-minute grace window, Tuya keeps polling (harmless, low resource use) but stops being written into the shared station cache. If rtl_433 never reports in that window (dongle unplugged, `rtl_433` not installed, etc.), the dashboard just stays on Tuya indefinitely — degraded but working data beats none.
+
+**Hardware:** an RTL-SDR USB dongle (any RTL2832U-based one), positioned within RF range of the VEVOR outdoor sensor.
+
+**Installation gotcha — kernel driver conflict:** Linux's `dvb_usb_rtl28xxu` driver auto-loads for RTL2832U dongles (it assumes they're DVB-T TV tuners) and claims the device before `rtl_433`/librtlsdr ever gets a chance to open it. Symptoms are a `usb_claim_interface error` or "no supported devices found" from `rtl_433` even though the dongle shows up fine in `lsusb`. Fix is to blacklist the DVB driver so it never grabs the device:
+
+```
+echo "blacklist dvb_usb_rtl28xxu" | sudo tee /etc/modprobe.d/blacklist-rtl.conf
+sudo rmmod dvb_usb_rtl28xxu   # or just reboot
+```
+
+Unplug/replug the dongle (or reboot) afterward, then confirm `rtl_433 -f 915M -F json` prints decoded JSON lines in a terminal on its own before expecting the module to pick it up.
+
+**Config (`.env`):**
+
+| Variable | Purpose |
+|---|---|
+| `RTL433_COMMAND` | Executable to spawn (default `rtl_433`). Override if your build isn't a bare binary on `PATH` — e.g. Debian's packaged `rtl_433` is too old to include the Vevor-7in1 decoder, so a `docker run ...` wrapper may be needed instead. |
+| `RTL433_ARGS` | Full space-separated args, overriding the default (`-f <RTL433_FREQUENCY> -F json`) entirely. Use this for a non-default invocation (e.g. the `docker run ... rtl_433 ...` case above) — it replaces the whole default array, so set this instead of (not in addition to) `RTL433_FREQUENCY`. |
+| `RTL433_FREQUENCY` | Radio frequency to tune to (default `915M`, the VEVOR station's band). Ignored if `RTL433_ARGS` is set. |
+| `RTL433_DEVICE_ID` | The Vevor-7in1 decoder's numeric `id` field, once known, to filter out other 433/915MHz traffic in range. Optional — leave unset to accept any Vevor-7in1 payload (fine for a single station; matters once a neighbor's station is in range too). |
+
+Tuya's own vars (`TUYA_CLIENT_ID`, `TUYA_CLIENT_SECRET`, `TUYA_DEVICE_ID`, plus optional `TUYA_BASE_URL`/`TUYA_POLL_INTERVAL_MS`) are still required if you want the Tuya fallback path to work at all — see `lib/TuyaWeatherClient.js`'s header comment for where to find each value in the Tuya IoT console.
+
+## Mascot Weather Character
+
+The Right Now panel's outfit-suggestion mascot — a cartoon kid dressed for the current feels-like temperature — is entirely image-driven. `WeatherCard.js` just computes a filename from current conditions and drops it into an `<img>` tag; no code changes are needed to reskin it, only new PNGs.
+
+**Why the images aren't in the repo:** the original set is personalized cartoon portraits of specific real kids, generated with Google's Gemini image model ("Nano Banana") from a reference photo — personal images, not something to publish. `assets/icons/mascot/*.png` is gitignored accordingly. Anyone else running this module needs to supply their own set before the mascot will render; until then, the `<img>` just 404s quietly (no crash) and the panel falls back to showing the plain forecast summary text instead.
+
+**How the filename is picked** (`cards/WeatherCard.js`):
+
+- `outfitBand(feelsLikeF)` maps the computed feels-like temperature to one of four bands: `heavy_coat` (<35°F), `jacket` (<55°F), `light_layer` (<70°F), `tshirt` (≥70°F).
+- If there's a meaningful rain chance in the "sweater weather" range, the band is overridden to a `rainy_day` look instead.
+- `getMascotChild()` alternates between two characters (`girl`/`boy`) on a rotating hourly schedule, so the same kid isn't on screen forever.
+- `resolveMascotFilename(band, isRainy, child)` combines those into the filename it expects to find in `assets/icons/mascot/`.
+
+**Filenames the code looks for** — exactly these 10, flat inside `assets/icons/mascot/` (no subfolders):
+
+```
+heavy_coat.png    heavy_coat_boy.png
+jacket.png        jacket_boy.png
+light_layer.png   light_layer_boy.png
+tshirt.png        tshirt_boy.png
+rainy_day.png     rainy_day_boy.png
+```
+
+No suffix = the "girl" character; `_boy` = the other. One image per band per character — no additional pose/size variants.
+
+**Generating your own set:** any image model that can hold a consistent cartoon character across multiple prompts will work; this set was made with Gemini/Nano Banana. Rough approach:
+
+1. Start from a clear reference photo of the kid (or an invented character, if you'd rather not use a real photo).
+2. Settle on a consistent character/style description you're happy repeating verbatim, e.g. *"Cartoon illustration of [description], simple flat-color style, standing, full body, transparent background."*
+3. For each of the 5 outfits, re-prompt with that same description plus the outfit — e.g. *"...wearing a heavy winter coat, hat, and mittens, standing in the snow"*, *"...wearing a light t-shirt and shorts on a sunny day"*, *"...wearing a rain jacket and rain boots, holding an umbrella"*. Keeping the character description and style wording identical each time is what keeps the kid recognizable across all five.
+4. Repeat the same 5 prompts with the other character's description for the `_boy` set.
+5. Export each as a transparent-background PNG and drop all 10 into `assets/icons/mascot/`, named exactly as listed above.
+
+Only want one character, no daily alternation? Skip generating the `_boy` set and hardcode `getMascotChild()` to always `return "girl";` — the `_boy` filenames are only ever requested when that function returns `"boy"`.
 
 ## Navigation
 
@@ -108,6 +176,8 @@ Fill in `config/.env` with real values. **This file is gitignored — never comm
 | `GOOGLE_MAPS_API_KEY` / `HOME_ADDRESS` | Travel card |
 | `COMMUTE_1_*` / `COMMUTE_2_*` | Travel card's two commute tiles |
 | `AURORA_KP_THRESHOLD` | Aurora badge sensitivity (optional — defaults to `6` if omitted) |
+| `TUYA_CLIENT_ID` / `TUYA_CLIENT_SECRET` / `TUYA_DEVICE_ID` / `TUYA_BASE_URL` | Weather station "Right Now" panel — Tuya Cloud source (see [Weather Station](#weather-station-right-now-panel)) |
+| `RTL433_COMMAND` / `RTL433_ARGS` / `RTL433_FREQUENCY` / `RTL433_DEVICE_ID` | Weather station "Right Now" panel — rtl_433 source, the preferred/faster path (optional — see [Weather Station](#weather-station-right-now-panel)) |
 
 ### 3. Google Cloud setup (for the Travel card)
 
