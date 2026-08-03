@@ -1,9 +1,17 @@
 /**
  * MMM-NexusDashboard.js
- * 
+ *
  * Core controller for the Nexus Dashboard operating system built on top of MagicMirror.
  * Manages configuration loading, workspace state, card rendering lifecycle, and automation.
  */
+
+// Order used only for touch-swipe navigation between workspaces (see
+// setupSwipeGestures()/navigateWorkspaceBySwipe() below). These must match
+// the exact payload.workspace strings already used by config/custom_menu.json
+// and the CYD remote's NEXUS_SWITCH_WORKSPACE payloads (arduino/NexusRemote).
+// "Weather" (automatic emergency workspace) and "Station" are deliberately
+// excluded - they're not part of the everyday swipe cycle.
+const SWIPEABLE_WORKSPACES = ["Home", "Forecast", "Calendar", "Travel"];
 
 Module.register("MMM-NexusDashboard", {
     // Default configuration
@@ -20,6 +28,7 @@ Module.register("MMM-NexusDashboard", {
         return [
             // 1. External dependencies first
             "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+            "https://unpkg.com/hammerjs@2.0.8/hammer.min.js",
 
             // 2. Base Utility Class
             this.file("lib/NexusCard.js"),
@@ -79,6 +88,7 @@ Module.register("MMM-NexusDashboard", {
         this.workspaceManager = null;
         this.cardManager = null;
         this.themeManager = null;
+        this.hammerManager = null;
         this.emergencyModeActive = false;
         this.weatherInterval = null;
         // Core MagicMirror modules (like "calendar") can broadcast their
@@ -122,6 +132,8 @@ Module.register("MMM-NexusDashboard", {
         // matter how correct their own logic is.
         this.cardManager.instantiateOverlay("AuroraCard");
         this.cardManager.instantiateOverlay("WatchBadgeCard");
+
+        this.setupSwipeGestures();
 
         // Request initial configs from node_helper.js
         this.sendSocketNotification("NEXUS_INIT", {
@@ -495,6 +507,66 @@ Module.register("MMM-NexusDashboard", {
             }
         }, 100);
     },
+    /**
+     * Wires up Hammer.js so a horizontal swipe anywhere on screen cycles
+     * through SWIPEABLE_WORKSPACES, mirroring the CYD remote / custom_menu.json
+     * NEXUS_SWITCH_WORKSPACE entry point. Bound to document.body (not this
+     * module's own wrapper) since that wrapper is torn down and rebuilt by
+     * every getDom() call, while document.body persists for the app's
+     * lifetime - so this only needs to run once, here in start().
+     */
+    setupSwipeGestures: function() {
+        if (typeof Hammer === "undefined") {
+            Log.error("[Nexus Dashboard] Hammer.js failed to load - swipe gestures disabled.");
+            return;
+        }
+
+        // touchAction: "pan-y" hands vertical touch movement straight to the
+        // browser instead of Hammer, so native scrolling (e.g. AlertCard's
+        // .nexus-alert-body, see css/alerts.css) keeps working untouched.
+        // Only horizontal movement is captured for gesture recognition.
+        this.hammerManager = new Hammer.Manager(document.body, {
+            touchAction: "pan-y"
+        });
+
+        const swipe = new Hammer.Swipe({
+            direction: Hammer.DIRECTION_HORIZONTAL,
+            // Hammer's defaults (threshold: 10px, velocity: 0.3px/ms) assume
+            // a handheld phone. This is a wall-mounted panel people swipe at
+            // arm's length, so gestures tend to be slower and cover less
+            // screen distance - loosen both so a deliberate but unhurried
+            // swipe still registers.
+            threshold: 5,
+            velocity: 0.15
+        });
+        this.hammerManager.add(swipe);
+
+        this.hammerManager.on("swipeleft swiperight", (ev) => {
+            // Belt-and-suspenders alongside the touchAction: "pan-y" lock
+            // above: never treat a gesture that started inside the alert
+            // panel's native-scroll container as a workspace swipe, even if
+            // it somehow registers as horizontal-enough to fire here.
+            if (ev.srcEvent.target.closest(".nexus-alert-body")) return;
+
+            this.navigateWorkspaceBySwipe(ev.type === "swipeleft" ? 1 : -1);
+        });
+    },
+
+    /**
+     * Steps the active workspace forward/backward through SWIPEABLE_WORKSPACES,
+     * wrapping at both ends, and hands off to the same transitionWorkspace()
+     * used by NEXUS_SWITCH_WORKSPACE so swipe-triggered switches behave
+     * identically to remote/menu-triggered ones (card suspend/resume, state
+     * replay, etc).
+     */
+    navigateWorkspaceBySwipe: function(direction) {
+        let currentIndex = SWIPEABLE_WORKSPACES.indexOf(this.activeWorkspace);
+        if (currentIndex === -1) currentIndex = 0;
+
+        const nextIndex = (currentIndex + direction + SWIPEABLE_WORKSPACES.length) % SWIPEABLE_WORKSPACES.length;
+        this.transitionWorkspace(SWIPEABLE_WORKSPACES[nextIndex], "Touch Swipe");
+    },
+
     /**
      * Revert dashboard to default configurations when conditions are clear
      */

@@ -1,5 +1,25 @@
 /* css/layout.css */
 
+/* MagicMirror core gives the fullscreen_above region itself a real height
+   (position: absolute; inset: 0 in css/main.css), but everything core
+   inserts *inside* it - .container, the module's own wrapper div (class
+   matches the module name, ".MMM-NexusDashboard" here), and .module-content -
+   is plain unstyled block markup with no height of its own, because most
+   modules are meant to size to their content, not fill the screen. Without
+   this, #nexus-dashboard-root's "height: 100%" below resolves against an
+   auto-height ancestor and is ignored per spec, so the whole dashboard (and
+   everything under it, including AlertCard) collapses to content size
+   instead of filling the display - confirmed via a live screenshot showing
+   the Weather workspace's radar+alert row using only the top ~28% of the
+   screen with the rest black. Scoped to this region (rather than patching
+   core's .container/.module-content globally) since MMM-NexusDashboard is
+   the only module configured at fullscreen_above in config/config.js. */
+.region.fullscreen.above .container,
+.region.fullscreen.above .MMM-NexusDashboard,
+.region.fullscreen.above .module-content {
+  height: 100%;
+}
+
 /* The wrapper returned by MMM-NexusDashboard.js getDom(). Needs an explicit
    height so percentage-height children (grid, sections, cards) have something
    real to size against. */

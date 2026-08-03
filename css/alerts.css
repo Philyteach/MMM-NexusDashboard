@@ -77,6 +77,13 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  /* Native touch scrolling for long alert text (USB touch input, no mouse
+     wheel on this kiosk) - momentum scrolling on WebKit/Electron, and
+     pan-y tells the browser (and MMM-NexusDashboard.js's Hammer swipe
+     recognizer, which is locked to horizontal via touchAction: "pan-y")
+     that vertical drags here belong to native scroll, not workspace swipe. */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   gap: 15px;
 }
 
