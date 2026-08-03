@@ -10,7 +10,7 @@ const path = require("path");
 
 const NodeHelper = require("node_helper");
 const fs = require("fs");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const formatter = require("./lib/formatter.js");
 const TuyaWeatherClient = require("./lib/TuyaWeatherClient.js");
 const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
@@ -591,18 +591,31 @@ findNearestAuroraProbability: function(coordinates, lat, lon) {
 },
 
     /**
-     * Retrieve latest assets from Album or Library via Immich's search API.
+     * Retrieve a page of assets from Album or Library via Immich's search API.
      *
      * Immich v3 removed GET /api/assets entirely (404) and removed the
      * `assets` array from GET /api/albums/{id}'s response — both listing
      * paths now go through POST /api/search/metadata instead, optionally
      * filtered by albumIds. See: https://immich.app/blog/v3-migration
+     *
+     * NOTE: page is chosen at random each call rather than hard-coded to 1.
+     * With a large auto-updating album (thousands of items, newest-first
+     * ordering), always requesting page 1 means only ever seeing the same
+     * newest ~100 photos, forever - everything older never surfaces. We
+     * deliberately don't use /api/search/random for this: it's been removed
+     * in recent Immich versions (404 as of v2.1.0+) and even where present
+     * had an open, unfixed bug biasing results toward low asset UUIDs
+     * (immich-app/immich#26049). A random page against /search/metadata
+     * is slower (one extra cheap request to learn the total) but reliably
+     * samples the whole album and works on any version that supports
+     * albumIds filtering at all.
      */
     handleImmichFetch: async function() {
         const env = this.parseEnvFile();
         const url = env.IMMICH_URL;
         const apiKey = env.IMMICH_API_KEY;
         const albumId = env.IMMICH_ALBUM_ID;
+        const pageSize = 100;
 
         if (!url || !apiKey) {
             this.sendSocketNotification("IMMICH_ERROR", "Missing credentials");
@@ -610,19 +623,43 @@ findNearestAuroraProbability: function(coordinates, lat, lon) {
         }
 
         try {
-            const searchBody = { page: 1, size: 100 };
+            const headers = {
+                "x-api-key": apiKey,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Connection": "close" // Force the socket to close cleanly so Node-fetch-like engines don't panic
+            };
+
+            // Cheap size:1 request purely to learn the album/library's total
+            // count, so we can pick a random page that actually exists.
+            const countBody = { page: 1, size: 1 };
+            if (albumId) {
+                countBody.albumIds = [albumId];
+            }
+
+            const countResponse = await fetch(`${url}/api/search/metadata`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(countBody)
+            });
+
+            if (!countResponse.ok) {
+                throw new Error(`Immich API returned status ${countResponse.status}`);
+            }
+
+            const countData = await countResponse.json();
+            const total = (countData && countData.assets && countData.assets.total) || 0;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const randomPage = Math.floor(Math.random() * totalPages) + 1;
+
+            const searchBody = { page: randomPage, size: pageSize };
             if (albumId) {
                 searchBody.albumIds = [albumId];
             }
 
             const response = await fetch(`${url}/api/search/metadata`, {
                 method: "POST",
-                headers: {
-                    "x-api-key": apiKey,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "Connection": "close" // Force the socket to close cleanly so Node-fetch-like engines don't panic
-                },
+                headers,
                 body: JSON.stringify(searchBody)
             });
 
@@ -968,8 +1005,11 @@ findNearestAuroraProbability: function(coordinates, lat, lon) {
             });
         }
 
+        // execFile (not exec) so payload.title - sourced from NWS alert
+        // data, not something we control - can't break out of the argument
+        // via quotes/backticks/shell metacharacters.
         const announcementText = `Warning: ${payload.title}. Please review instructions on dashboard immediately.`;
-        exec(`espeak-ng "${announcementText}"`, (error) => {
+        execFile("espeak-ng", [announcementText], (error) => {
             if (error) console.warn("[Nexus Hardware Control] TTS voice engine skipped.");
         });
     }
