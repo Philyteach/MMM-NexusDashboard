@@ -117,7 +117,11 @@ class WeatherCard extends NexusCard {
         if (!this.stationData || this.stationData.outdoorTempF == null) return null;
 
         const ageMs = Date.now() - (this.stationData.lastUpdated || 0);
-        const isStale = ageMs > 5 * 60 * 1000 || !this.stationData.sensorOnline;
+        // rtl_433 (the primary source now, ~20s cadence) reports far more
+        // often than Tuya cloud (~20min) did when this threshold was first
+        // set - 90s is a comfortable multiple of rtl_433's cadence without
+        // flagging normal poll jitter as stale.
+        const isStale = ageMs > 90 * 1000 || !this.stationData.sensorOnline;
 
         const tempF = this.stationData.outdoorTempF;
         const humidity = this.stationData.outdoorHumidity;

@@ -306,6 +306,20 @@ module.exports = NodeHelper.create({
             this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
         };
 
+        // Fires when rtl_433 has gone staleTimeoutMs without a decoded
+        // reading - either the process is crash-looping or the physical
+        // sensor itself has gone quiet (dead battery, out of RF range),
+        // neither of which the hardcoded sensorOnline:true on every
+        // reading would ever surface on its own. Guarded by rtlConfirmed
+        // the same way onUpdate is, so a never-yet-confirmed rtl_433
+        // client can't stomp on a healthy Tuya-sourced stationCache.
+        this.rtlClient.onStale = () => {
+            if (!this.rtlConfirmed) return;
+            console.warn("[Nexus Station] rtl_433 has gone quiet - marking station data offline until it reports again.");
+            this.stationCache = { ...this.stationCache, sensorOnline: false };
+            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+        };
+
         this.rtlClient.start();
     },
 
