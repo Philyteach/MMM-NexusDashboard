@@ -64,5 +64,16 @@
         "cards": ["TravelCard"]
       }
     ]
+  },
+  "Station": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "station-full",
+        "cards": ["WeatherStationCard"]
+      }
+    ]
   }
 }

@@ -13,6 +13,7 @@ config/.env
 #config/server.json
 config/school.json
 config/travel.json
+config/stationHistory.json
 arduino/NexusRemote/secrets.h
 assets/icons/mascot/*.png
 # OS garbage

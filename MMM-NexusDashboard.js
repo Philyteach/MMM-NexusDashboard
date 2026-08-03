@@ -34,6 +34,7 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/ClockCard.js"),
             this.file("cards/WeatherCard.js"),
             this.file("cards/ForecastCard.js"),
+            this.file("cards/WeatherStationCard.js"),
             this.file("cards/AlertCard.js"),
             this.file("cards/RadarCard.js"),
             this.file("cards/ImmichCard.js"),
@@ -55,8 +56,9 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/cards.css"),     
             this.file("css/clock.css"),     
             this.file("css/weather.css"),   
-            this.file("css/forecast.css"),  
-            this.file("css/radar.css"),     
+            this.file("css/forecast.css"),
+            this.file("css/station.css"),
+            this.file("css/radar.css"),
             this.file("css/calendar.css"),  
             this.file("css/immich.css"),    
             this.file("css/alerts.css"),    
@@ -304,6 +306,7 @@ Module.register("MMM-NexusDashboard", {
                 this.latestStationData = payload;
                 this.cardManager.instances["WeatherCard"]?.updateStationState?.(payload);
                 this.cardManager.instances["ForecastCard"]?.updateStationState?.(payload);
+                this.cardManager.instances["WeatherStationCard"]?.updateStationState?.(payload);
                 break;
 
             case "IMMICH_PHOTOS_DATA":
@@ -471,6 +474,7 @@ Module.register("MMM-NexusDashboard", {
         if (this.latestStationData) {
             this.cardManager.instances["WeatherCard"]?.updateStationState?.(this.latestStationData);
             this.cardManager.instances["ForecastCard"]?.updateStationState?.(this.latestStationData);
+            this.cardManager.instances["WeatherStationCard"]?.updateStationState?.(this.latestStationData);
         }
 
         this.updateDom();

@@ -1,0 +1,202 @@
+/* MMM-NexusDashboard/css/station.css */
+
+.nexus-station-full-card {
+  height: 100%;
+  flex-grow: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3rem 4rem;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  overflow: hidden;
+  gap: 1.5rem;
+}
+
+/* ---------- Header ---------- */
+
+.nexus-station-full-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nexus-station-source {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6bd0ff;
+}
+
+.nexus-station-source.nexus-station-stale {
+  color: #888;
+}
+
+/* ---------- Current temp + sparkline ---------- */
+
+.nexus-station-main-row {
+  display: flex;
+  align-items: center;
+  gap: 3rem;
+}
+
+.nexus-station-temp-block {
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.nexus-station-temp-big {
+  font-size: 6rem;
+  font-weight: 200;
+  line-height: 1;
+}
+
+.nexus-station-temp-sub {
+  font-size: 1.1rem;
+  color: #aaa;
+  margin-top: 0.25rem;
+}
+
+.nexus-station-hilo {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.nexus-station-hilo .hi { color: #ff9f6b; }
+.nexus-station-hilo .lo { color: #6bb0ff; }
+
+.nexus-station-sparkline {
+  flex: 1;
+  min-width: 0;
+}
+
+.nexus-station-spark-svg {
+  width: 100%;
+  height: 60px;
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.nexus-station-spark-empty {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* ---------- Stat tile grid (indoor/humidity/pressure/rain/UV/light) ---------- */
+
+.nexus-station-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.nexus-station-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.3rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  padding: 1rem 0.5rem;
+  box-sizing: border-box;
+}
+
+.nexus-station-stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+.nexus-station-stat-value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.nexus-station-stat-sub {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.nexus-station-trend-arrow {
+  font-size: 1rem;
+  margin-left: 0.25rem;
+}
+
+.nexus-trend-rising { color: #6bff9f; }
+.nexus-trend-falling { color: #ff6b6b; }
+.nexus-trend-steady { color: #ccc; }
+.nexus-trend-unknown { color: #666; }
+
+/* ---------- Wind: compass + speed/gust/battery ---------- */
+
+.nexus-station-wind-row {
+  display: flex;
+  align-items: center;
+  gap: 2.5rem;
+}
+
+.nexus-station-compass {
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.nexus-compass-face {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nexus-compass-n, .nexus-compass-e, .nexus-compass-s, .nexus-compass-w {
+  position: absolute;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #888;
+}
+
+.nexus-compass-n { top: 4px; left: 50%; transform: translateX(-50%); }
+.nexus-compass-s { bottom: 4px; left: 50%; transform: translateX(-50%); }
+.nexus-compass-e { right: 6px; top: 50%; transform: translateY(-50%); }
+.nexus-compass-w { left: 6px; top: 50%; transform: translateY(-50%); }
+
+.nexus-compass-needle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 50px solid #6bd0ff;
+  transform-origin: bottom center;
+}
+
+.nexus-station-wind-stats {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+}
+
+.nexus-station-wind-stats .nexus-station-tile {
+  flex: 1;
+}
+
+.nexus-station-battery-ok { color: #6bff9f; }
+.nexus-station-battery-low { color: #ff9f6b; }
+.nexus-station-battery-unknown { color: #888; }

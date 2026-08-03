@@ -68,6 +68,15 @@ function formatHourlyBuckets(periods, bucketSizeHours = 3, bucketCount = 8) {
     return buckets;
 }
 
+// YYYY-MM-DD in local time - used to detect a day rollover for the
+// station's daily high/low and rain-since-midnight baseline.
+function localDateString(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
 module.exports = NodeHelper.create({
 
     start: function() {
@@ -102,6 +111,17 @@ module.exports = NodeHelper.create({
         this.auroraCache = { badgeVisible: false, kpValue: null, probability: null, updatedAt: null };
         this.runAuroraCheck();
         setInterval(() => this.runAuroraCheck(), 15 * 60 * 1000);
+
+        // Persisted rolling history (temp/pressure snapshots, ~5min
+        // sampling) plus the daily high/low and rain-since-midnight
+        // baseline, so a pm2 restart mid-day doesn't lose either - see
+        // loadStationHistory()/recordStationSnapshot() below. rain_mm from
+        // the sensor is a raw cumulative tipping-bucket counter (0.4mm/tip)
+        // that counts up forever rather than resetting daily, so "rain
+        // today" has to be computed here as a delta against a baseline
+        // captured at local midnight - the station itself doesn't expose a
+        // daily total.
+        this.stationHistoryData = this.loadStationHistory();
 
         // Live outdoor/indoor readings from the VEVOR weather station.
         // Two possible sources feed this cache - see
@@ -264,7 +284,8 @@ module.exports = NodeHelper.create({
             if (this.rtlConfirmed) return;
             this.stationCache = { ...this.stationCache, ...reading };
             console.log(`[Nexus Station][Tuya] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
-            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+            this.recordStationSnapshot(this.stationCache);
+            this.broadcastStationData();
         };
 
         this.tuyaClient.start();
@@ -303,7 +324,8 @@ module.exports = NodeHelper.create({
                 indoorTempF: this.stationCache.indoorTempF,
                 indoorHumidity: this.stationCache.indoorHumidity
             };
-            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+            this.recordStationSnapshot(this.stationCache);
+            this.broadcastStationData();
         };
 
         // Fires when rtl_433 has gone staleTimeoutMs without a decoded
@@ -317,10 +339,170 @@ module.exports = NodeHelper.create({
             if (!this.rtlConfirmed) return;
             console.warn("[Nexus Station] rtl_433 has gone quiet - marking station data offline until it reports again.");
             this.stationCache = { ...this.stationCache, sensorOnline: false };
-            this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+            this.broadcastStationData();
         };
 
         this.rtlClient.start();
+    },
+
+    // ---------- station history / daily high-low / rain-since-midnight ----------
+    //
+    // stationCache itself only ever holds the latest reading (see the
+    // comment above its definition) - none of dailyHighF/dailyLowF/
+    // rainTodayIn/pressureTrend/tempHistory below can be derived from that
+    // alone, so this small persisted file is the only place any of that
+    // history lives. Mirrors the loadPredictions()/savePredictions()
+    // pattern already used for travel.json.
+
+    loadStationHistory: function() {
+        const historyPath = path.join(this.configPath, "stationHistory.json");
+        const empty = { history: [], daily: { date: null, highF: null, lowF: null, rainBaselineMm: null } };
+        if (!fs.existsSync(historyPath)) return empty;
+        try {
+            const parsed = JSON.parse(fs.readFileSync(historyPath, "utf-8"));
+            return {
+                history: Array.isArray(parsed.history) ? parsed.history : [],
+                daily: parsed.daily || empty.daily
+            };
+        } catch (error) {
+            console.error("[Nexus Station History] Failed to read stationHistory.json, starting fresh:", error.message);
+            return empty;
+        }
+    },
+
+    saveStationHistory: function() {
+        const historyPath = path.join(this.configPath, "stationHistory.json");
+        try {
+            fs.writeFileSync(historyPath, JSON.stringify(this.stationHistoryData, null, 2), "utf-8");
+        } catch (error) {
+            console.error("[Nexus Station History] Failed to write stationHistory.json:", error.message);
+        }
+    },
+
+    /**
+     * Called on every fresh station reading (Tuya or rtl_433). Updates the
+     * persisted daily high/low + rain-since-midnight baseline, and appends
+     * a sparse (~5min) history sample used for the temp sparkline and
+     * pressure trend arrow. `reading` should be the full merged
+     * stationCache, not a raw per-source partial reading - e.g.
+     * pressureInHg only ever comes from Tuya and needs to be present here
+     * even when rtl_433 is the source that triggered this call.
+     */
+    recordStationSnapshot: function(reading) {
+        const now = Date.now();
+        const today = localDateString();
+        const data = this.stationHistoryData;
+        let changed = false;
+
+        if (data.daily.date !== today) {
+            // New day (or first run ever) - reset high/low. rainBaselineMm
+            // deliberately left null here even if this reading has one -
+            // the lazy-capture check below handles setting it, so a
+            // rollover and a "today already started but no rain_mm-bearing
+            // reading has arrived yet" restart both funnel through the
+            // same logic.
+            data.daily = { date: today, highF: reading.outdoorTempF ?? null, lowF: reading.outdoorTempF ?? null, rainBaselineMm: null };
+            changed = true;
+        } else if (reading.outdoorTempF != null) {
+            if (data.daily.highF == null || reading.outdoorTempF > data.daily.highF) { data.daily.highF = reading.outdoorTempF; changed = true; }
+            if (data.daily.lowF == null || reading.outdoorTempF < data.daily.lowF) { data.daily.lowF = reading.outdoorTempF; changed = true; }
+        }
+
+        if (reading.rainMm != null) {
+            if (data.daily.rainBaselineMm == null) {
+                // Lazy capture: rain_mm is rtl_433-only (Tuya never reports
+                // it), so the day may run for a while - after a rollover,
+                // or after a restart that lost yesterday's in-memory state
+                // - before a reading with rain_mm actually arrives. Capture
+                // the baseline the moment one does, whatever time that is.
+                data.daily.rainBaselineMm = reading.rainMm;
+                changed = true;
+            } else if (reading.rainMm < data.daily.rainBaselineMm) {
+                // The sensor's own cumulative tip counter went backwards -
+                // it got reset (battery change, firmware reset, etc.)
+                // somewhere since the baseline was captured. Can't know
+                // exactly when, so treat the current raw value as the
+                // count since that (unknown) reset point, and rebase to 0
+                // so today's total stays sane instead of going negative.
+                console.warn(`[Nexus Station History] rain_mm counter went backwards (${reading.rainMm} < baseline ${data.daily.rainBaselineMm}) - assuming a counter reset and rebasing.`);
+                data.daily.rainBaselineMm = 0;
+                changed = true;
+            }
+        }
+
+        // Sparse sampling - one entry per ~5 minutes is plenty for a
+        // sparkline/trend arrow and keeps the persisted file small.
+        const lastSample = data.history[data.history.length - 1];
+        if (!lastSample || (now - lastSample.t) >= 5 * 60 * 1000) {
+            data.history.push({ t: now, outdoorTempF: reading.outdoorTempF ?? null, pressureInHg: reading.pressureInHg ?? null });
+            const cutoff = now - 24 * 60 * 60 * 1000;
+            data.history = data.history.filter(entry => entry.t >= cutoff);
+            changed = true;
+        }
+
+        if (changed) this.saveStationHistory();
+    },
+
+    /**
+     * Derives the extra "meteorologist" fields for the Weather Station
+     * card from current stationCache + persisted history/daily state.
+     * Pure/read-only (no side effects, no persistence - all mutation
+     * happens in recordStationSnapshot above) so it's safe to call on
+     * every broadcast, including ones not triggered by a fresh reading
+     * (e.g. the rtl_433 onStale handler, or NEXUS_INIT's replay).
+     */
+    computeStationExtras: function() {
+        const data = this.stationHistoryData;
+        const daily = data.daily || {};
+
+        let rainTodayIn = null;
+        if (daily.rainBaselineMm != null && this.stationCache.rainMm != null) {
+            const diffMm = Math.max(0, this.stationCache.rainMm - daily.rainBaselineMm);
+            rainTodayIn = diffMm * 0.0393701;
+        }
+
+        // 3-hour pressure trend - a classic meteorologist detail. Needs a
+        // history sample from roughly 3 hours ago; falls back to the
+        // oldest available sample if history is shorter than that so the
+        // trend still shows *something* rather than nothing for the first
+        // few hours after a restart. Thresholds are a starting point, not
+        // a meteorological standard - worth tuning once there's real data
+        // to watch it against.
+        let pressureTrend = null;
+        const currentPressure = this.stationCache.pressureInHg;
+        if (currentPressure != null && data.history.length > 0) {
+            const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+            const past = data.history.find(entry => entry.t >= threeHoursAgo && entry.pressureInHg != null)
+                || data.history.find(entry => entry.pressureInHg != null);
+            if (past) {
+                const deltaInHg = currentPressure - past.pressureInHg;
+                let direction = "steady";
+                if (deltaInHg >= 0.05) direction = "rising";
+                else if (deltaInHg <= -0.05) direction = "falling";
+                pressureTrend = { direction, deltaInHg };
+            }
+        }
+
+        return {
+            dailyHighF: daily.highF ?? null,
+            dailyLowF: daily.lowF ?? null,
+            rainTodayIn: rainTodayIn,
+            pressureTrend: pressureTrend,
+            tempHistory: data.history.map(entry => ({ t: entry.t, outdoorTempF: entry.outdoorTempF }))
+        };
+    },
+
+    // Single point every station-data broadcast goes through, so
+    // WeatherStationCard's extra fields ride along on the exact same
+    // notification WeatherCard/ForecastCard already consume (they simply
+    // ignore fields they don't destructure) rather than needing a second
+    // notification type.
+    broadcastStationData: function() {
+        this.sendSocketNotification("NEXUS_STATION_DATA", {
+            ...this.stationCache,
+            ...this.computeStationExtras(),
+            stationSource: this.rtlConfirmed ? "rtl_433" : "tuya"
+        });
     },
 
     socketNotificationReceived: async function(notification, payload) {
@@ -328,7 +510,7 @@ module.exports = NodeHelper.create({
             case "NEXUS_INIT":
                 this.loadAllConfigurations();
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
-                this.sendSocketNotification("NEXUS_STATION_DATA", this.stationCache);
+                this.broadcastStationData();
                 break;
             case "GET_NEXUS_WEATHER":
                 await this.handleWeatherFetch(payload);
