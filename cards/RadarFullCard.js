@@ -1,23 +1,26 @@
 /**
- * cards/RadarCard.js
+ * cards/RadarFullCard.js
  *
- * High-performance animated radar loop card using Leaflet.js and the Iowa
- * Environmental Mesonet's NEXRAD composite reflectivity tiles.
- *
- * IEM's mosaic is built directly from the same NEXRAD Level III feed the
- * NWS itself uses to issue warnings (rather than a third-party global
- * aggregation), refreshed on the same ~5-minute cadence as the actual radar
- * volume scans. Docs: https://mesonet.agron.iastate.edu/ogc/
+ * Full-page deep-dive radar view, distinct from RadarCard's compact
+ * half-screen loop in the Weather emergency workspace. Same provider (IEM's
+ * NEXRAD composite reflectivity mosaic, see RadarCard.js's header comment
+ * for why IEM over a third-party aggregator) and the same animated-loop
+ * mechanics, but this card also tracks activeAlert (fed via updateState(),
+ * the same NEXUS_WEATHER_DATA/WEATHER_UPDATED payload AlertCard already
+ * consumes) to decide how often to rebuild the tile set: every 5 minutes
+ * normally, matching IEM's own composite refresh cadence, or every minute
+ * while a watch/warning is active, when the picture can change fast enough
+ * that 5 minutes is genuinely stale.
  */
 
 // Minutes-before-now for each loop frame, oldest first, "now" last. Single
 // source of truth for both the IEM tile URL suffix and the frame's
 // displayed timestamp in buildRadarFrames() - two separately-hardcoded
 // parallel arrays could silently drift apart after an edit; deriving both
-// from one list can't. Mirrors RadarFullCard.js's identical setup.
-const RADAR_CARD_FRAME_OFFSETS_MIN = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
+// from one list can't.
+const RADAR_FULL_CARD_FRAME_OFFSETS_MIN = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
 
-class RadarCard extends NexusCard {
+class RadarFullCard extends NexusCard {
     start() {
         this.map = null;
         this.radarLayers = [];
@@ -27,16 +30,38 @@ class RadarCard extends NexusCard {
         this.refreshTimer = null;
         this.lat = this.configManager.getEnv("LATITUDE", 40.2139);
         this.lon = this.configManager.getEnv("LONGITUDE", -75.0046);
+        this.activeAlert = null;
+        // Timers only ever run while this card's workspace is the one on
+        // screen - see suspend()/resume(), mirroring RadarCard's own
+        // "don't animate/refresh what nobody's looking at" behavior.
+        this.isFocused = false;
+    }
+
+    /**
+     * Called by the core module whenever fresh weather data arrives
+     * (same payload AlertCard.updateState() already reads activeAlert
+     * from). Only the refresh cadence depends on this - the currently
+     * running timer, if any, is rebuilt immediately so an alert onset
+     * doesn't have to wait out whatever's left of the slower interval.
+     */
+    updateState(weatherData) {
+        const alert = weatherData?.activeAlert || null;
+        if (JSON.stringify(this.activeAlert) === JSON.stringify(alert)) return;
+
+        this.activeAlert = alert;
+        this.updateStatusTag();
+        if (this.isFocused) this.scheduleFrameRefresh();
     }
 
     render() {
-        this.domElement.className = "nexus-card nexus-radar-card";
+        this.domElement.className = "nexus-card nexus-radar-card nexus-radar-full-card";
 
         // Leaflet needs a physical div container with an explicit ID to mount to
         this.domElement.innerHTML = `
             <div class="radar-container">
-                <div id="nexus-radar-map"></div>
+                <div id="nexus-radar-full-map"></div>
                 <div class="radar-timeline-tag">Loading NEXRAD…</div>
+                <div class="radar-status-tag"></div>
             </div>
         `;
 
@@ -49,22 +74,19 @@ class RadarCard extends NexusCard {
     initializeMap() {
         if (this.map) return; // Prevent double initialization
 
-        // 1. Initialize Leaflet map targeting your exact coordinates
-        this.map = L.map("nexus-radar-map", {
+        this.map = L.map("nexus-radar-full-map", {
             zoomControl: false,
             attributionControl: false,
             dragging: false,
             doubleClickZoom: false,
             scrollWheelZoom: false,
             touchZoom: false
-        }).setView([this.lat, this.lon], 8); // Zoom level 8 is ideal for regional storms
+        }).setView([this.lat, this.lon], 8);
 
-        // 2. Add an ultra-sleek, clean Dark Matter base map (perfect for smart mirrors)
         L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
             maxZoom: 19
         }).addTo(this.map);
 
-        // 3. Drop a minimalist marker directly on your home coordinate
         const pulseIcon = L.divIcon({
             className: "radar-home-marker",
             html: '<div class="home-pulse"></div>',
@@ -72,16 +94,19 @@ class RadarCard extends NexusCard {
         });
         L.marker([this.lat, this.lon], { icon: pulseIcon }).addTo(this.map);
 
-        // 4. Build the animated NEXRAD loop and keep it fresh while visible
+        // First render counts as "in focus" - transitionWorkspace() only
+        // calls resume() on subsequent switches back into this workspace,
+        // never on the initial instantiation (see MMM-NexusDashboard.js).
+        this.isFocused = true;
+        this.updateStatusTag();
         this.buildRadarFrames();
         this.scheduleFrameRefresh();
     }
 
     /**
-     * Builds the animated NEXRAD loop from IEM's composite reflectivity
-     * tiles. IEM exposes the last 50 minutes as fixed 5-minute-increment
-     * timestamp suffixes relative to request time — no metadata fetch
-     * needed, the URLs are predictable and generated locally.
+     * Same predictable-URL approach as RadarCard: IEM's "-mXXm" tiles are
+     * resolved relative to request time, so rebuilding periodically is what
+     * keeps the loop from quietly going stale.
      */
     buildRadarFrames() {
         if (!this.map) return;
@@ -91,17 +116,16 @@ class RadarCard extends NexusCard {
         // its "-mXXm" suffixes against for this request.
         const buildTime = Date.now();
 
-        // Clear any old layers before rebuilding (e.g. on periodic refresh or resume())
         this.radarLayers.forEach(layer => this.map.removeLayer(layer));
         this.radarLayers = [];
         this.frameTimestamps = [];
 
-        RADAR_CARD_FRAME_OFFSETS_MIN.forEach((offsetMin) => {
-            const ts = offsetMin === 0 ? "900913" : `900913-m${String(offsetMin).padStart(2, "0")}m`; // "900913" alone = most recent
+        RADAR_FULL_CARD_FRAME_OFFSETS_MIN.forEach((offsetMin) => {
+            const ts = offsetMin === 0 ? "900913" : `900913-m${String(offsetMin).padStart(2, "0")}m`;
             const tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-${ts}/{z}/{x}/{y}.png`;
 
             const layer = L.tileLayer(tileUrl, {
-                opacity: 0, // Hidden initially, faded in/out dynamically by startLoop()
+                opacity: 0,
                 zIndex: 100
             });
 
@@ -114,25 +138,38 @@ class RadarCard extends NexusCard {
     }
 
     /**
-     * IEM's "-mXXm" tile URLs are resolved relative to whenever the request
-     * arrives, not frozen at build time — without periodically rebuilding,
-     * the loop would quietly go stale the longer the Weather workspace
-     * stays open (which matters most exactly when it's being watched
-     * during an active severe weather event).
+     * Cadence adapts to alert state: a minute while a watch/warning is
+     * active, otherwise 5 minutes (IEM's own composite update cadence).
      */
     scheduleFrameRefresh() {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
+
+        const intervalMs = this.activeAlert ? 60000 : 300000;
         this.refreshTimer = setInterval(() => {
             this.buildRadarFrames();
-        }, 300000); // 5 minutes, matching IEM's own update cadence
+        }, intervalMs);
+    }
+
+    updateStatusTag() {
+        const tag = this.domElement?.querySelector(".radar-status-tag");
+        if (!tag) return;
+
+        if (this.activeAlert) {
+            tag.textContent = `${this.activeAlert.type || "ALERT"} ACTIVE — updating every 1 min`;
+            tag.classList.add("radar-status-alert");
+        } else {
+            tag.textContent = "Updating every 5 min";
+            tag.classList.remove("radar-status-alert");
+        }
     }
 
     /**
      * Shows the wall-clock time of whichever frame is currently visible in
      * the loop (radar tiles are 5-minute snapshots, so minute precision is
-     * all IEM's data actually supports) - lets you tell at a glance whether
-     * the loop is still live or has quietly gone stale, instead of just
-     * trusting a static "NEXRAD Loop" label.
+     * all IEM's data actually supports) - the whole point being that if
+     * this stops advancing, or the "LIVE" frame's time isn't within a
+     * refresh cycle of now, you can tell the loop has gone stale at a
+     * glance instead of just trusting a static "NEXRAD Loop" label.
      */
     updateFrameTimeLabel(index) {
         const tag = this.domElement?.querySelector(".radar-timeline-tag");
@@ -149,24 +186,22 @@ class RadarCard extends NexusCard {
         if (this.radarLayers.length === 0) return;
 
         this.currentFrameIndex = 0;
-        // Make first frame visible
         this.radarLayers[0].setOpacity(0.65);
         this.updateFrameTimeLabel(0);
 
         this.animationTimer = setInterval(() => {
             const nextIndex = (this.currentFrameIndex + 1) % this.radarLayers.length;
 
-            // Fade out the old, fade in the new
             this.radarLayers[this.currentFrameIndex].setOpacity(0);
             this.radarLayers[nextIndex].setOpacity(0.65);
 
             this.currentFrameIndex = nextIndex;
             this.updateFrameTimeLabel(nextIndex);
-        }, 1000); // 1-second interval creates a smooth loop animation
+        }, 1000);
     }
 
     suspend() {
-        // Clear both timers when switching workspaces to save system resources
+        this.isFocused = false;
         if (this.animationTimer) {
             clearInterval(this.animationTimer);
             this.animationTimer = null;
@@ -178,16 +213,17 @@ class RadarCard extends NexusCard {
     }
 
     resume() {
-        // Re-fetch and animate when workspace becomes active
+        this.isFocused = true;
         if (this.map) {
             this.buildRadarFrames();
             this.scheduleFrameRefresh();
+            this.updateStatusTag();
         }
     }
 }
 
 // Bind to registry
 if (window.MMM_NexusDashboard_CardManager) {
-    window.MMM_NexusDashboard_CardManager.registerCard("RadarCard", RadarCard);
+    window.MMM_NexusDashboard_CardManager.registerCard("RadarFullCard", RadarFullCard);
 }
-window.RadarCard = RadarCard;
+window.RadarFullCard = RadarFullCard;

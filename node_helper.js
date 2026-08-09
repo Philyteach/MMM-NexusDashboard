@@ -14,6 +14,8 @@ const { exec, execFile } = require("child_process");
 const formatter = require("./lib/formatter.js");
 const TuyaWeatherClient = require("./lib/TuyaWeatherClient.js");
 const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
+const CwopClient = require("./lib/CwopClient.js");
+const PwsWeatherClient = require("./lib/PwsWeatherClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -67,6 +69,19 @@ function formatHourlyBuckets(periods, bucketSizeHours = 3, bucketCount = 8) {
     }
     return buckets;
 }
+
+// Ecowitt WH31 fridge/freezer sensors, distinguished by their physical
+// dip-switch channel (see RtlWeatherClient's onFridgeSensorUpdate). Channel
+// 5 (Deep Freezer) is deliberately left out of this map rather than hard-
+// coded as absent - it's not currently reporting, but the moment it does,
+// it'll need its own entry here to start alerting on it. Until then, a
+// reading on channel 5 simply matches nothing below and is ignored.
+const FRIDGE_FREEZER_CHANNELS = {
+    1: { location: "Kitchen Fridge", thresholdF: 40, debounceMs: 30 * 60 * 1000 },
+    2: { location: "Kitchen Freezer", thresholdF: 15, debounceMs: 45 * 60 * 1000 },
+    3: { location: "Garage Fridge", thresholdF: 40, debounceMs: 30 * 60 * 1000 },
+    4: { location: "Garage Freezer", thresholdF: 15, debounceMs: 45 * 60 * 1000 }
+};
 
 // YYYY-MM-DD in local time - used to detect a day rollover for the
 // station's daily high/low and rain-since-midnight baseline.
@@ -147,6 +162,16 @@ module.exports = NodeHelper.create({
             lastUpdated: null
         };
         this.startWeatherStationClients();
+
+        // Latch state for the fridge/freezer alerting, keyed by channel
+        // (1-4, see FRIDGE_FREEZER_CHANNELS above). Kept in-memory only,
+        // not persisted like stationHistory/travel.json - a helper restart
+        // mid-debounce just re-starts that channel's over-threshold timer
+        // from zero, delaying a first-time alert by up to its debounce
+        // window. Acceptable for a badge-tier, develops-over-hours alert
+        // (per the build brief) versus the added complexity of persisting
+        // and rehydrating timer state across restarts.
+        this.fridgeAlertState = {};
 
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
@@ -244,12 +269,61 @@ module.exports = NodeHelper.create({
 
         this.startTuyaWeatherClient();
         this.startRtlWeatherClient();
+        this.startCwopClient();
+        this.startPwsWeatherClient();
 
         setTimeout(() => {
             if (!this.rtlConfirmed) {
                 console.warn("[Nexus Station] No rtl_433 reading within the grace window - staying on Tuya cloud polling.");
             }
         }, RTL_GRACE_MS);
+    },
+
+    /**
+     * Reads CWOP credentials from .env and starts the outbound push to
+     * NOAA's Citizen Weather Observer Program. Missing credentials disable
+     * this quietly, same pattern as the inbound station clients - CWOP is
+     * a nice-to-have contribution, not something the rest of the dashboard
+     * depends on.
+     */
+    startCwopClient: function() {
+        const env = this.parseEnvFile();
+        if (!env.CWOP_STATION_ID || !env.CWOP_LATITUDE || !env.CWOP_LONGITUDE) {
+            console.warn("[Nexus CWOP] Station ID or lat/lon missing from .env - CWOP posting disabled.");
+            return;
+        }
+
+        this.cwopClient = new CwopClient({
+            stationId: env.CWOP_STATION_ID,
+            latitude: parseFloat(env.CWOP_LATITUDE),
+            longitude: parseFloat(env.CWOP_LONGITUDE),
+            host: env.CWOP_HOST || "cwop.aprs.net",
+            port: env.CWOP_PORT ? parseInt(env.CWOP_PORT, 10) : 14580,
+            pushIntervalMs: env.CWOP_PUSH_INTERVAL_MS ? parseInt(env.CWOP_PUSH_INTERVAL_MS, 10) : undefined
+        });
+        this.cwopClient.getReading = () => ({ ...this.stationCache, ...this.computeStationExtras() });
+        this.cwopClient.start();
+    },
+
+    /**
+     * Reads PWSWeather credentials from .env and starts the outbound push
+     * to PWSWeather (Vaisala Xweather / AerisWeather Contributor Plan).
+     */
+    startPwsWeatherClient: function() {
+        const env = this.parseEnvFile();
+        if (!env.PWSWEATHER_STATION_ID || !env.PWSWEATHER_STATION_KEY) {
+            console.warn("[Nexus PWSWeather] Station ID or station key missing from .env - PWSWeather posting disabled.");
+            return;
+        }
+
+        this.pwsWeatherClient = new PwsWeatherClient({
+            stationId: env.PWSWEATHER_STATION_ID,
+            stationKey: env.PWSWEATHER_STATION_KEY,
+            baseUrl: env.PWSWEATHER_BASE_URL,
+            pushIntervalMs: env.PWSWEATHER_PUSH_INTERVAL_MS ? parseInt(env.PWSWEATHER_PUSH_INTERVAL_MS, 10) : undefined
+        });
+        this.pwsWeatherClient.getReading = () => ({ ...this.stationCache, ...this.computeStationExtras() });
+        this.pwsWeatherClient.start();
     },
 
     /**
@@ -342,7 +416,122 @@ module.exports = NodeHelper.create({
             this.broadcastStationData();
         };
 
+        // Ecowitt WH31 fridge/freezer sensors ride the same rtl_433 stream
+        // as the Vevor-7in1 station - see RtlWeatherClient's separate
+        // onFridgeSensorUpdate callback, added in parallel with onUpdate/
+        // onStale above rather than touching either of them.
+        this.rtlClient.onFridgeSensorUpdate = (msg) => this.handleFridgeSensorReading(msg);
+
         this.rtlClient.start();
+    },
+
+    // ---------- fridge/freezer temperature alerting ----------
+    //
+    // Badge/notification-tier only (not the full-screen AlertCard/workspace
+    // treatment tornado warnings get) - this develops over hours, not
+    // minutes, so a latched badge plus a one-time push notification is
+    // enough. See FRIDGE_FREEZER_CHANNELS above for the per-channel
+    // threshold/debounce table.
+
+    /**
+     * Called for every decoded WH31 reading on any channel. Tracks how long
+     * a channel has been continuously over/under its threshold and latches
+     * (or clears) the alert once the relevant debounce window elapses -
+     * a single reading dipping back under threshold does NOT clear an
+     * active latch on its own, only a sustained run of under-threshold
+     * readings does (same debounce window, reused as the clear-side
+     * hysteresis).
+     */
+    handleFridgeSensorReading: function(msg) {
+        const config = FRIDGE_FREEZER_CHANNELS[msg.channel];
+        if (!config) return; // unmapped channel (e.g. channel 5) - not alerted on
+
+        if (msg.temperature_C == null) return;
+        const tempF = (msg.temperature_C * 9) / 5 + 32;
+        const now = Date.now();
+
+        if (!this.fridgeAlertState[msg.channel]) {
+            this.fridgeAlertState[msg.channel] = { overSince: null, underSince: null, latched: false, latchedAt: null };
+        }
+        const state = this.fridgeAlertState[msg.channel];
+        state.lastTempF = tempF;
+        state.lastUpdated = now;
+
+        const isOver = tempF > config.thresholdF;
+
+        if (isOver) {
+            state.underSince = null;
+            if (state.overSince == null) state.overSince = now;
+
+            if (!state.latched && (now - state.overSince) >= config.debounceMs) {
+                state.latched = true;
+                state.latchedAt = now;
+                console.warn(`[Nexus Fridge Alert] ${config.location} latched: ${tempF.toFixed(1)}°F (threshold ${config.thresholdF}°F)`);
+                this.sendFridgeAlertPush(config.location, tempF, config.thresholdF);
+            }
+        } else {
+            state.overSince = null;
+            if (state.latched) {
+                if (state.underSince == null) state.underSince = now;
+
+                if ((now - state.underSince) >= config.debounceMs) {
+                    state.latched = false;
+                    state.latchedAt = null;
+                    state.underSince = null;
+                    console.log(`[Nexus Fridge Alert] ${config.location} cleared: back under ${config.thresholdF}°F for ${Math.round(config.debounceMs / 60000)} min.`);
+                }
+            }
+        }
+
+        this.broadcastFridgeAlerts();
+    },
+
+    /**
+     * One-time push on first latch only (handleFridgeSensorReading only
+     * calls this the instant state.latched flips false -> true, never on
+     * subsequent readings while still latched).
+     */
+    sendFridgeAlertPush: async function(location, tempF, thresholdF) {
+        const env = this.parseEnvFile();
+        const host = env.FRIDGE_NTFY_HOST || "835alert.work";
+        const topic = env.FRIDGE_NTFY_TOPIC || "freezer-alerts";
+        const message = `${location} is at ${Math.round(tempF)}°F (above ${thresholdF}°F threshold)`;
+
+        try {
+            const response = await fetch(`https://${host}/${topic}`, {
+                method: "POST",
+                headers: { "Content-Type": "text/plain" },
+                body: message
+            });
+            if (!response.ok) throw new Error(`ntfy returned status ${response.status}`);
+            console.log(`[Nexus Fridge Alert] ntfy push sent: ${message}`);
+        } catch (error) {
+            console.error("[Nexus Fridge Alert] ntfy push failed:", error.message);
+        }
+    },
+
+    /**
+     * Sends the frontend every currently-latched channel. Called on every
+     * fresh reading (cheap, in-process) as well as once on NEXUS_INIT so a
+     * freshly-loaded/reloaded frontend replays whatever's already latched
+     * instead of waiting for the next sensor reading to find out.
+     */
+    broadcastFridgeAlerts: function() {
+        const activeAlerts = Object.keys(this.fridgeAlertState)
+            .filter(channel => this.fridgeAlertState[channel].latched)
+            .map(channel => {
+                const state = this.fridgeAlertState[channel];
+                const config = FRIDGE_FREEZER_CHANNELS[channel];
+                return {
+                    channel: parseInt(channel, 10),
+                    location: config.location,
+                    thresholdF: config.thresholdF,
+                    currentTempF: state.lastTempF,
+                    latchedAt: state.latchedAt
+                };
+            });
+
+        this.sendSocketNotification("NEXUS_FRIDGE_ALERTS", activeAlerts);
     },
 
     // ---------- station history / daily high-low / rain-since-midnight ----------
@@ -511,6 +700,7 @@ module.exports = NodeHelper.create({
                 this.loadAllConfigurations();
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
                 this.broadcastStationData();
+                this.broadcastFridgeAlerts();
                 break;
             case "GET_NEXUS_WEATHER":
                 await this.handleWeatherFetch(payload);

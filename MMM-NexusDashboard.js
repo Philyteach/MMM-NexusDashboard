@@ -46,11 +46,13 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/WeatherStationCard.js"),
             this.file("cards/AlertCard.js"),
             this.file("cards/RadarCard.js"),
+            this.file("cards/RadarFullCard.js"),
             this.file("cards/ImmichCard.js"),
             this.file("cards/CalendarCard.js"),
             this.file("cards/TravelCard.js"),
             this.file("cards/AuroraCard.js"),
-            this.file("cards/WatchBadgeCard.js")
+            this.file("cards/WatchBadgeCard.js"),
+            this.file("cards/FridgeAlertCard.js")
         ];
     },
 
@@ -74,7 +76,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/server.css"),
             this.file("css/travel.css"),
             this.file("css/badges.css"),
-            this.file("css/mascot.css")
+            this.file("css/mascot.css"),
+            this.file("css/fridge-alert.css")
         ];
     },
 
@@ -101,6 +104,21 @@ Module.register("MMM-NexusDashboard", {
         this.latestAuroraData = null;
         this.latestWatchData = null;
         this.latestStationData = null;
+        this.latestFridgeAlerts = null;
+
+        // Repeated CYD taps on the "Weather / Forecast" tile cycle through
+        // these sub-screens instead of no-op'ing (the CYD always sends the
+        // same NEXUS_SWITCH_WORKSPACE -> "Forecast" request - see
+        // transitionWorkspace()/cycleWeatherSubScreen() below). Config-driven
+        // list rather than a magic screen count, and a matching card lookup
+        // so cycling logic and rendering both stay in sync with one array.
+        this.weatherSubScreen = 0;
+        this.weatherScreens = ["current", "forecast", "radar"];
+        this.weatherScreenCards = {
+            current: "WeatherCard",
+            forecast: "ForecastCard",
+            radar: "RadarFullCard"
+        };
     },
 
     /**
@@ -156,11 +174,97 @@ Module.register("MMM-NexusDashboard", {
             return wrapper;
         }
 
-        // Render current workspace layout container
-        const workspaceContainer = this.workspaceManager.renderWorkspace(this.activeWorkspace);
+        // Render current workspace layout container. "Forecast" is special-
+        // cased: which single card fills the page depends on
+        // this.weatherSubScreen (see cycleWeatherSubScreen()), not on a
+        // static modes.json card list like every other workspace.
+        const workspaceContainer = this.activeWorkspace === "Forecast"
+            ? this.renderWeatherWorkspace()
+            : this.workspaceManager.renderWorkspace(this.activeWorkspace);
         wrapper.appendChild(workspaceContainer);
 
         return wrapper;
+    },
+
+    /**
+     * Builds the currently-active weather sub-screen (current conditions /
+     * forecast / radar) plus its position indicator dots. Only one card is
+     * ever mounted into the DOM at a time - see cycleWeatherSubScreen() for
+     * why (avoids RadarFullCard's refresh/animation timers running for a
+     * sub-screen nobody's looking at).
+     */
+    renderWeatherWorkspace: function() {
+        const screen = this.weatherScreens[this.weatherSubScreen];
+
+        let container;
+        switch (screen) {
+            case "current":
+                container = this.renderWeatherCurrent();
+                break;
+            case "radar":
+                container = this.renderWeatherRadar();
+                break;
+            case "forecast":
+            default:
+                container = this.renderWeatherForecast();
+                break;
+        }
+
+        container.appendChild(this.buildWeatherSubScreenIndicator());
+        return container;
+    },
+
+    renderWeatherCurrent: function() {
+        return this.buildWeatherSubScreenContainer(this.weatherScreenCards.current);
+    },
+
+    renderWeatherForecast: function() {
+        // "Forecast" already exists as a normal single-card workspace in
+        // modes.json - reuse WorkspaceManager rather than duplicating its
+        // section-building logic.
+        return this.workspaceManager.renderWorkspace("Forecast");
+    },
+
+    renderWeatherRadar: function() {
+        return this.buildWeatherSubScreenContainer(this.weatherScreenCards.radar);
+    },
+
+    /**
+     * Wraps a single card in the same full-page grid markup
+     * WorkspaceManager.renderWorkspace() produces for a one-card workspace
+     * (e.g. Station, Radar), so "current" and "radar" sub-screens look
+     * consistent with "forecast" (which goes through WorkspaceManager
+     * directly) despite not having their own modes.json entries.
+     */
+    buildWeatherSubScreenContainer: function(cardId) {
+        const container = document.createElement("div");
+        container.id = "nexus-workspace-container";
+        container.className = "nexus-workspace nexus-workspace-forecast nexus-layout-grid";
+        container.style.setProperty("--grid-template-cols", "1fr");
+        container.style.setProperty("--grid-template-rows", "1fr");
+
+        const cardEl = this.cardManager.getCardElement(cardId);
+        if (cardEl) container.appendChild(cardEl);
+
+        return container;
+    },
+
+    /**
+     * Small dot row (bottom-center overlay, see css/layout.css) showing
+     * which weather sub-screen is active out of how many - otherwise
+     * cycling via repeat taps is undiscoverable with no prior knowledge.
+     */
+    buildWeatherSubScreenIndicator: function() {
+        const indicator = document.createElement("div");
+        indicator.className = "nexus-subscreen-indicator";
+
+        this.weatherScreens.forEach((screen, index) => {
+            const dot = document.createElement("span");
+            dot.className = "nexus-subscreen-dot" + (index === this.weatherSubScreen ? " active" : "");
+            indicator.appendChild(dot);
+        });
+
+        return indicator;
     },
 
     /**
@@ -222,6 +326,7 @@ Module.register("MMM-NexusDashboard", {
             this.cardManager.instances["WeatherCard"]?.updateState(payload);
             this.cardManager.instances["ForecastCard"]?.updateState(payload);
             this.cardManager.instances["AlertCard"]?.updateState(payload);
+            this.cardManager.instances["RadarFullCard"]?.updateState(payload);
             this.updateDom();
         }
     },
@@ -261,6 +366,7 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["WeatherCard"]?.updateState(payload);
                 this.cardManager.instances["ForecastCard"]?.updateState(payload);
                 this.cardManager.instances["AlertCard"]?.updateState(payload);
+                this.cardManager.instances["RadarFullCard"]?.updateState(payload);
                 this.evaluateWeatherAutomation(payload.activeAlert);
     
                 // WatchBadgeCard doesn't own a grid cell - it injects its
@@ -319,6 +425,11 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["WeatherCard"]?.updateStationState?.(payload);
                 this.cardManager.instances["ForecastCard"]?.updateStationState?.(payload);
                 this.cardManager.instances["WeatherStationCard"]?.updateStationState?.(payload);
+                break;
+
+            case "NEXUS_FRIDGE_ALERTS":
+                this.latestFridgeAlerts = payload || [];
+                this.cardManager.instances["FridgeAlertCard"]?.updateState(this.latestFridgeAlerts);
                 break;
 
             case "IMMICH_PHOTOS_DATA":
@@ -435,7 +546,19 @@ Module.register("MMM-NexusDashboard", {
      * Transition workspace state dynamically
      */
     transitionWorkspace: function(targetWorkspace, reason) {
-        if (this.activeWorkspace === targetWorkspace) return;
+        if (this.activeWorkspace === targetWorkspace) {
+            // The CYD always sends the same "switch to Forecast" request
+            // per tap - it has no concept of sub-screens, so a repeat tap
+            // arrives here indistinguishable from any other same-workspace
+            // call (swipe wrap-around, a redundant automation trigger,
+            // etc). Only cycle for the one workspace that actually has
+            // sub-screens; every other same-workspace call keeps no-op'ing
+            // exactly as before.
+            if (targetWorkspace === "Forecast") {
+                this.cycleWeatherSubScreen(reason);
+            }
+            return;
+        }
 
         Log.log(`Nexus Automation Triggered [${reason}]: Switching to ${targetWorkspace} Workspace`);
 
@@ -443,8 +566,25 @@ Module.register("MMM-NexusDashboard", {
         // loop, which otherwise runs forever in the background once
         // instantiated) and resume cards entering view. Cards without
         // suspend()/resume() defined are left alone.
-        const outgoingCardIds = this.workspaceManager.getCardIdsForWorkspace(this.activeWorkspace);
-        const incomingCardIds = this.workspaceManager.getCardIdsForWorkspace(targetWorkspace);
+        //
+        // "Forecast" is special-cased on both sides: modes.json only ever
+        // lists "ForecastCard" for it, but the card actually mounted right
+        // now depends on this.weatherSubScreen (see
+        // renderWeatherWorkspace()/cycleWeatherSubScreen()) - it could just
+        // as easily be RadarFullCard. Without this override, leaving
+        // Forecast via swipe or emergency-mode automation while parked on
+        // the radar sub-screen would never call RadarFullCard.suspend(),
+        // leaving its refresh/animation timers running forever in the
+        // background even after the CYD swiped away to another workspace.
+        const outgoingCardIds = this.activeWorkspace === "Forecast"
+            ? [this.weatherScreenCards[this.weatherScreens[this.weatherSubScreen]]]
+            : this.workspaceManager.getCardIdsForWorkspace(this.activeWorkspace);
+        // Incoming sub-screen always resets to index 0 on a fresh switch-in
+        // (see the reset below), so resume the card that maps to, not
+        // whatever this.weatherSubScreen still holds from the outgoing side.
+        const incomingCardIds = targetWorkspace === "Forecast"
+            ? [this.weatherScreenCards[this.weatherScreens[0]]]
+            : this.workspaceManager.getCardIdsForWorkspace(targetWorkspace);
 
         outgoingCardIds
             .filter(id => !incomingCardIds.includes(id))
@@ -454,6 +594,15 @@ Module.register("MMM-NexusDashboard", {
             });
 
         this.activeWorkspace = targetWorkspace;
+
+        // Switching in from a DIFFERENT workspace always starts back at
+        // sub-screen 0 - only a repeat tap while already on Forecast (see
+        // the early-return branch above) advances it. Safe to reset
+        // unconditionally here since this line only runs when the incoming
+        // and outgoing workspace differ.
+        if (targetWorkspace === "Forecast") {
+            this.weatherSubScreen = 0;
+        }
 
         incomingCardIds.forEach(id => {
             const instance = this.cardManager.instances[id];
@@ -479,6 +628,7 @@ Module.register("MMM-NexusDashboard", {
             this.cardManager.instances["WeatherCard"]?.updateState(this.latestWeatherData);
             this.cardManager.instances["ForecastCard"]?.updateState(this.latestWeatherData);
             this.cardManager.instances["AlertCard"]?.updateState(this.latestWeatherData);
+            this.cardManager.instances["RadarFullCard"]?.updateState(this.latestWeatherData);
         }
         if (this.latestAuroraData) {
             this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
@@ -487,6 +637,9 @@ Module.register("MMM-NexusDashboard", {
             this.cardManager.instances["WeatherCard"]?.updateStationState?.(this.latestStationData);
             this.cardManager.instances["ForecastCard"]?.updateStationState?.(this.latestStationData);
             this.cardManager.instances["WeatherStationCard"]?.updateStationState?.(this.latestStationData);
+        }
+        if (this.latestFridgeAlerts) {
+            this.cardManager.instances["FridgeAlertCard"]?.updateState(this.latestFridgeAlerts);
         }
 
         this.updateDom();
@@ -507,6 +660,57 @@ Module.register("MMM-NexusDashboard", {
             }
         }, 100);
     },
+    /**
+     * Advances this.weatherSubScreen (wrapping) on a repeat tap of the
+     * Forecast tile. Mirrors transitionWorkspace()'s own suspend()/resume()
+     * handling, just scoped to the one card swapping out and the one
+     * swapping in - RadarFullCard in particular must stop refreshing tiles/
+     * animating the moment its sub-screen is no longer on screen, exactly
+     * like it already does on a real cross-workspace switch.
+     */
+    cycleWeatherSubScreen: function(reason) {
+        const previousScreen = this.weatherScreens[this.weatherSubScreen];
+        this.weatherSubScreen = (this.weatherSubScreen + 1) % this.weatherScreens.length;
+        const nextScreen = this.weatherScreens[this.weatherSubScreen];
+
+        Log.log(`Nexus Weather Sub-Screen Cycle [${reason}]: ${previousScreen} -> ${nextScreen}`);
+
+        const outgoingCardId = this.weatherScreenCards[previousScreen];
+        const incomingCardId = this.weatherScreenCards[nextScreen];
+
+        if (outgoingCardId !== incomingCardId) {
+            const outgoing = this.cardManager.instances[outgoingCardId];
+            if (outgoing && typeof outgoing.suspend === "function") outgoing.suspend();
+        }
+
+        this.updateDom();
+
+        // updateDom() (above) is what actually instantiates the incoming
+        // sub-screen's card the very first time it's ever cycled to -
+        // CardManager.getCardElement() runs inside renderWeatherWorkspace(),
+        // called from getDom(). Only after that call is the instance
+        // guaranteed to exist, so resume() and the weather-data replay both
+        // have to happen here, not before. Without the replay, a
+        // freshly-instantiated ForecastCard/WeatherCard shows nothing but
+        // "Updating weather..." until the next scheduled poll (up to 15
+        // minutes away) - same gap transitionWorkspace() already closes for
+        // real workspace switches via its own latestWeatherData replay.
+        if (outgoingCardId !== incomingCardId) {
+            const incoming = this.cardManager.instances[incomingCardId];
+            if (incoming && typeof incoming.resume === "function") incoming.resume();
+        }
+
+        const incoming = this.cardManager.instances[incomingCardId];
+        if (incoming) {
+            if (this.latestWeatherData && typeof incoming.updateState === "function") {
+                incoming.updateState(this.latestWeatherData);
+            }
+            if (this.latestStationData && typeof incoming.updateStationState === "function") {
+                incoming.updateStationState(this.latestStationData);
+            }
+        }
+    },
+
     /**
      * Wires up Hammer.js so a horizontal swipe anywhere on screen cycles
      * through SWIPEABLE_WORKSPACES, mirroring the CYD remote / custom_menu.json

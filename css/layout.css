@@ -30,6 +30,7 @@
 }
 
 .nexus-workspace {
+  position: relative; /* containing block for .nexus-subscreen-indicator's bottom-center overlay */
   display: grid;
   /* Falls back to a clean 12-column grid if a workspace profile in modes.json
      doesn't define gridTemplateColumns/Rows. When it does, WorkspaceManager.js
@@ -85,4 +86,34 @@
 
 .nexus-no-shrink {
   flex-shrink: 0;
+}
+
+/* Weather sub-screen position dots (current conditions / forecast / radar -
+   see MMM-NexusDashboard.js's cycleWeatherSubScreen()/renderWeatherWorkspace()).
+   Bottom-center overlay, same glassmorphism pill language as
+   .radar-timeline-tag/.radar-status-tag in css/radar.css. */
+.nexus-subscreen-indicator {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
+  background: rgba(10, 10, 10, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.nexus-subscreen-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.nexus-subscreen-dot.active {
+  background: #0088ff;
+  box-shadow: 0 0 6px rgba(0, 136, 255, 0.8);
 }

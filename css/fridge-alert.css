@@ -1,0 +1,57 @@
+/* No active alerts - fully collapse out of the flex sidebar rather than
+   sitting there as an empty bordered/padded .nexus-card box. */
+.nexus-fridge-alert-empty {
+  display: none;
+}
+
+.nexus-fridge-alert-card {
+  gap: 0.5rem;
+}
+
+.nexus-fridge-alert-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.nexus-fridge-alert-item + .nexus-fridge-alert-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.6rem;
+}
+
+.nexus-fridge-alert-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.nexus-fridge-alert-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nexus-fridge-alert-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+.nexus-fridge-alert-temp {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #EF4444;
+}
+
+.nexus-fridge-alert-threshold {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nexus-fridge-alert-duration {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}

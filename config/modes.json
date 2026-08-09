@@ -6,7 +6,7 @@
       {
         "id": "sidebar",
         "className": "column-sidebar",
-        "cards": ["ClockCard", "WeatherCard", "CalendarCard"]
+        "cards": ["ClockCard", "WeatherCard", "FridgeAlertCard", "CalendarCard"]
       },
       {
         "id": "main",
@@ -73,6 +73,17 @@
       {
         "id": "station-full",
         "cards": ["WeatherStationCard"]
+      }
+    ]
+  },
+  "Radar": {
+    "layout": "grid",
+    "gridTemplateColumns": "1fr",
+    "gridTemplateRows": "1fr",
+    "sections": [
+      {
+        "id": "radar-full",
+        "cards": ["RadarFullCard"]
       }
     ]
   }
