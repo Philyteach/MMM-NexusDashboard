@@ -184,6 +184,175 @@
   margin-top: 0;
 }
 
+/* ---------- Clickable event affordances ---------- */
+
+.calendar-month-event-chip,
+.calendar-month-event-more,
+.calendar-event-item,
+.calendar-daylist-item {
+  cursor: pointer;
+}
+
+.calendar-month-event-chip:active {
+  background: rgba(0, 136, 255, 0.4);
+}
+
+.calendar-event-item:active .event-title {
+  color: #4fb2ff;
+}
+
+/* ---------- Event detail / day-list modal ---------- */
+
+.calendar-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.calendar-event-modal {
+  position: relative;
+  background: #111;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 28px 26px 24px;
+  width: min(90vw, 480px);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  color: #fff;
+  box-sizing: border-box;
+}
+
+.calendar-modal-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.calendar-modal-close:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.calendar-modal-calendar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 10px;
+}
+
+.calendar-modal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.calendar-modal-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-right: 40px;
+}
+
+.calendar-modal-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4fb2ff;
+  background: rgba(0, 136, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.calendar-modal-range {
+  font-size: 0.95rem;
+  color: #0088ff;
+  margin-bottom: 14px;
+}
+
+.calendar-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 10px;
+}
+
+.calendar-modal-icon {
+  flex-shrink: 0;
+}
+
+.calendar-modal-description {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 12px;
+  white-space: pre-line;
+}
+
+.calendar-daylist-modal {
+  width: min(90vw, 360px);
+}
+
+.calendar-daylist {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-daylist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.calendar-daylist-item:active {
+  background: rgba(0, 136, 255, 0.2);
+}
+
+.calendar-daylist-item .event-time {
+  font-size: 0.75rem;
+  color: #666;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.calendar-daylist-item .event-title {
+  font-size: 0.9rem;
+  color: #fff;
+  white-space: normal;
+}
+
 /* ==========================================================================
    Full-screen Calendar workspace override
    Scoped to .nexus-section-calendar-full (the "calendar-full" section id
