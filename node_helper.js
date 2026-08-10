@@ -173,6 +173,13 @@ module.exports = NodeHelper.create({
         // and rehydrating timer state across restarts.
         this.fridgeAlertState = {};
 
+        // 24h temp history per channel, persisted to fridgeHistory.json -
+        // unlike fridgeAlertState above, this one IS persisted (mirrors
+        // stationHistory.json) since a graph losing its trailing hours on
+        // every helper restart would be far more noticeable than the
+        // alert debounce restarting from zero.
+        this.fridgeHistoryData = this.loadFridgeHistory();
+
         // Setup secure proxy route for private Immich assets
         this.expressApp.get("/nexus-immich-proxy/:assetId", async (req, res) => {
             const env = this.parseEnvFile();
@@ -483,7 +490,9 @@ module.exports = NodeHelper.create({
             }
         }
 
+        this.recordFridgeSnapshot(msg.channel, tempF);
         this.broadcastFridgeAlerts();
+        this.broadcastFridgeHistory();
     },
 
     /**
@@ -532,6 +541,77 @@ module.exports = NodeHelper.create({
             });
 
         this.sendSocketNotification("NEXUS_FRIDGE_ALERTS", activeAlerts);
+    },
+
+    // ---------- fridge/freezer 24h temp history ----------
+    //
+    // Same persisted-sparse-sample pattern as stationHistory.json's
+    // tempHistory (see recordStationSnapshot below), just keyed per
+    // channel instead of a single outdoor sensor.
+
+    loadFridgeHistory: function() {
+        const historyPath = path.join(this.configPath, "fridgeHistory.json");
+        const empty = {};
+        if (!fs.existsSync(historyPath)) return empty;
+        try {
+            const parsed = JSON.parse(fs.readFileSync(historyPath, "utf-8"));
+            return (parsed && typeof parsed === "object") ? parsed : empty;
+        } catch (error) {
+            console.error("[Nexus Fridge History] Failed to read fridgeHistory.json, starting fresh:", error.message);
+            return empty;
+        }
+    },
+
+    saveFridgeHistory: function() {
+        const historyPath = path.join(this.configPath, "fridgeHistory.json");
+        try {
+            fs.writeFileSync(historyPath, JSON.stringify(this.fridgeHistoryData, null, 2), "utf-8");
+        } catch (error) {
+            console.error("[Nexus Fridge History] Failed to write fridgeHistory.json:", error.message);
+        }
+    },
+
+    /**
+     * Called for every decoded WH31 reading on a mapped channel (from
+     * handleFridgeSensorReading, right alongside the latch logic above).
+     * Same ~5min sparse sampling / 24h pruning as recordStationSnapshot.
+     */
+    recordFridgeSnapshot: function(channel, tempF) {
+        const now = Date.now();
+        if (!this.fridgeHistoryData[channel]) this.fridgeHistoryData[channel] = [];
+        const history = this.fridgeHistoryData[channel];
+
+        const lastSample = history[history.length - 1];
+        if (!lastSample || (now - lastSample.t) >= 5 * 60 * 1000) {
+            history.push({ t: now, tempF: tempF });
+            const cutoff = now - 24 * 60 * 60 * 1000;
+            this.fridgeHistoryData[channel] = history.filter(entry => entry.t >= cutoff);
+            this.saveFridgeHistory();
+        }
+    },
+
+    /**
+     * Sends the frontend all 4 mapped channels (unlike broadcastFridgeAlerts
+     * above, which only sends currently-latched ones) - the deep-dive
+     * FridgeTempsCard shows every sensor's graph regardless of alert state,
+     * not just the ones currently out of range.
+     */
+    broadcastFridgeHistory: function() {
+        const channels = Object.keys(FRIDGE_FREEZER_CHANNELS).map(channel => {
+            const config = FRIDGE_FREEZER_CHANNELS[channel];
+            const state = this.fridgeAlertState[channel] || {};
+            return {
+                channel: parseInt(channel, 10),
+                location: config.location,
+                thresholdF: config.thresholdF,
+                currentTempF: state.lastTempF ?? null,
+                lastUpdated: state.lastUpdated ?? null,
+                latched: !!state.latched,
+                history: this.fridgeHistoryData[channel] || []
+            };
+        });
+
+        this.sendSocketNotification("NEXUS_FRIDGE_HISTORY", channels);
     },
 
     // ---------- station history / daily high-low / rain-since-midnight ----------
@@ -701,6 +781,7 @@ module.exports = NodeHelper.create({
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
                 this.broadcastStationData();
                 this.broadcastFridgeAlerts();
+                this.broadcastFridgeHistory();
                 break;
             case "GET_NEXUS_WEATHER":
                 await this.handleWeatherFetch(payload);

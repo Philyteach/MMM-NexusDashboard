@@ -52,7 +52,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/TravelCard.js"),
             this.file("cards/AuroraCard.js"),
             this.file("cards/WatchBadgeCard.js"),
-            this.file("cards/FridgeAlertCard.js")
+            this.file("cards/FridgeAlertCard.js"),
+            this.file("cards/FridgeTempsCard.js")
         ];
     },
 
@@ -77,7 +78,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/travel.css"),
             this.file("css/badges.css"),
             this.file("css/mascot.css"),
-            this.file("css/fridge-alert.css")
+            this.file("css/fridge-alert.css"),
+            this.file("css/fridge-temps.css")
         ];
     },
 
@@ -105,6 +107,7 @@ Module.register("MMM-NexusDashboard", {
         this.latestWatchData = null;
         this.latestStationData = null;
         this.latestFridgeAlerts = null;
+        this.latestFridgeHistory = null;
 
         // Repeated CYD taps on the "Weather / Forecast" tile cycle through
         // these sub-screens instead of no-op'ing (the CYD always sends the
@@ -432,6 +435,11 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["FridgeAlertCard"]?.updateState(this.latestFridgeAlerts);
                 break;
 
+            case "NEXUS_FRIDGE_HISTORY":
+                this.latestFridgeHistory = payload || [];
+                this.cardManager.instances["FridgeTempsCard"]?.updateState(this.latestFridgeHistory);
+                break;
+
             case "IMMICH_PHOTOS_DATA":
                 this.cardManager.instances["ImmichCard"]?.updateState(payload);
                 break;
@@ -640,6 +648,9 @@ Module.register("MMM-NexusDashboard", {
         }
         if (this.latestFridgeAlerts) {
             this.cardManager.instances["FridgeAlertCard"]?.updateState(this.latestFridgeAlerts);
+        }
+        if (this.latestFridgeHistory) {
+            this.cardManager.instances["FridgeTempsCard"]?.updateState(this.latestFridgeHistory);
         }
 
         this.updateDom();
