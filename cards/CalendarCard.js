@@ -6,7 +6,8 @@
  *
  * Renders:
  *   1. A month grid for the current month, each day cell showing up to 2
- *      event titles (plus a "+N more" indicator).
+ *      events with start time + title (plus a "+N more" indicator).
+ *      Full-day events show just the title, no time.
  *   2. A focused agenda below it, showing only Today's and Tomorrow's
  *      events with times, grouped under relative day headers.
  *
@@ -64,6 +65,21 @@ class CalendarCard extends NexusCard {
         try {
             const date = new Date(parseInt(timestamp));
             return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        } catch (e) {
+            console.error("[Nexus Calendar] Error parsing date:", e);
+            return "";
+        }
+    }
+
+    // Compact time for month grid chips, e.g. "9:00" / "2:30" -- no AM/PM,
+    // to save space in the small cells.
+    formatTimeCompact(timestamp) {
+        if (!timestamp) return "";
+        try {
+            const date = new Date(parseInt(timestamp));
+            return date
+                .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                .replace(/\s?[AP]M$/i, "");
         } catch (e) {
             console.error("[Nexus Calendar] Error parsing date:", e);
             return "";
@@ -187,7 +203,11 @@ class CalendarCard extends NexusCard {
             const remaining = cell.events.length - shown.length;
 
             const chipsHtml = shown
-                .map(ev => `<div class="calendar-month-event-chip" data-event-idx="${this.events.indexOf(ev)}">${this.escapeHtml(ev.title || "Untitled")}</div>`)
+                .map(ev => {
+                    const timeStr = ev.fullDayEvent ? "" : this.formatTimeCompact(ev.startDate);
+                    const timeHtml = timeStr ? `<span class="calendar-month-event-time">${this.escapeHtml(timeStr)}</span>` : "";
+                    return `<div class="calendar-month-event-chip" data-event-idx="${this.events.indexOf(ev)}">${timeHtml}${this.escapeHtml(ev.title || "Untitled")}</div>`;
+                })
                 .join("") + (remaining > 0 ? `<div class="calendar-month-event-more" data-day-key="${cell.key}">+${remaining} more</div>` : "");
 
             return `

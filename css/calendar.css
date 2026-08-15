@@ -152,6 +152,13 @@
   text-overflow: ellipsis;
 }
 
+.calendar-month-event-time {
+  color: #4fb2ff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 3px;
+}
+
 .calendar-month-event-more {
   font-size: 0.5rem;
   color: rgba(255, 255, 255, 0.4);
