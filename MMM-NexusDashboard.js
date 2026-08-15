@@ -249,6 +249,16 @@ Module.register("MMM-NexusDashboard", {
         const cardEl = this.cardManager.getCardElement(cardId);
         if (cardEl) container.appendChild(cardEl);
 
+        // Mirrors the badge slot WorkspaceManager.renderWorkspace() mounts
+        // on every workspace it builds - this container bypasses
+        // WorkspaceManager entirely (see renderWeatherWorkspace() above), so
+        // without this, watch/aurora badges would go dark specifically while
+        // cycled onto the Forecast workspace's "current"/"radar" sub-screens.
+        const badgeSlot = document.createElement("div");
+        badgeSlot.className = "nexus-badge-slot nexus-badge-slot--top-right";
+        badgeSlot.setAttribute("data-badge-target", "clock");
+        container.appendChild(badgeSlot);
+
         return container;
     },
 
