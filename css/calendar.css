@@ -6,6 +6,39 @@
   border: none;
   box-shadow: none;
   padding: 10px 0;
+
+  /* Per-person event highlight colors, referenced by the
+     "calendar-color-*" classes below. Tweak here to re-theme. */
+  --calendar-color-green: #34c759;
+  --calendar-color-red: #ff453a;
+  --calendar-color-orange: #ff9f0a;
+  --calendar-color-yellow: #ffd60a;
+}
+
+/* ---------- Event color bars (assigned in CalendarCard.js via
+   getEventColorClass()) ----------
+   The transparent border/padding lives on the base .calendar-month-event-chip
+   and .calendar-event-item rules further down, so matched and unmatched
+   events stay aligned instead of shifting when a bar appears. */
+
+.calendar-month-event-chip.calendar-color-green,
+.calendar-event-item.calendar-color-green {
+  border-left-color: var(--calendar-color-green);
+}
+
+.calendar-month-event-chip.calendar-color-red,
+.calendar-event-item.calendar-color-red {
+  border-left-color: var(--calendar-color-red);
+}
+
+.calendar-month-event-chip.calendar-color-orange,
+.calendar-event-item.calendar-color-orange {
+  border-left-color: var(--calendar-color-orange);
+}
+
+.calendar-month-event-chip.calendar-color-yellow,
+.calendar-event-item.calendar-color-yellow {
+  border-left-color: var(--calendar-color-yellow);
 }
 
 .calendar-header {
@@ -34,6 +67,8 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  border-left: 3px solid transparent;
+  padding-left: 6px;
 }
 
 .event-meta {
@@ -146,7 +181,8 @@
   color: rgba(255, 255, 255, 0.8);
   background: rgba(0, 136, 255, 0.15);
   border-radius: 2px;
-  padding: 1px 3px;
+  border-left: 3px solid transparent;
+  padding: 1px 3px 1px 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

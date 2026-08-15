@@ -22,6 +22,18 @@
  * since render() does a full innerHTML replace on every calendar refresh
  * and would otherwise wipe out an open modal.
  */
+
+// Highlight-bar color per person, chosen by a case-insensitive match on the
+// start of the event title. First matching rule wins; unmatched titles get
+// no bar. CSS class names here must match the "calendar-color-*" rules in
+// css/calendar.css, where the actual color values live.
+const CALENDAR_EVENT_COLOR_RULES = [
+    { prefixes: ["gio"], className: "calendar-color-green" },
+    { prefixes: ["giulie"], className: "calendar-color-red" },
+    { prefixes: ["dad", "ken"], className: "calendar-color-orange" },
+    { prefixes: ["mom", "erin"], className: "calendar-color-yellow" }
+];
+
 class CalendarCard extends NexusCard {
     start() {
         this.events = [];
@@ -128,6 +140,16 @@ class CalendarCard extends NexusCard {
             .replace(/'/g, "&#39;");
     }
 
+    // CSS class for the event's color bar, based on a case-insensitive
+    // prefix match against CALENDAR_EVENT_COLOR_RULES (start-of-title only,
+    // not a substring match). Returns "" when nothing matches.
+    getEventColorClass(title) {
+        if (!title) return "";
+        const lower = title.trim().toLowerCase();
+        const rule = CALENDAR_EVENT_COLOR_RULES.find(r => r.prefixes.some(prefix => lower.startsWith(prefix)));
+        return rule ? rule.className : "";
+    }
+
     // Groups events by local calendar day: Map<"YYYY-M-D", event[]>, each
     // day's events sorted chronologically.
     groupEventsByDay() {
@@ -206,7 +228,8 @@ class CalendarCard extends NexusCard {
                 .map(ev => {
                     const timeStr = ev.fullDayEvent ? "" : this.formatTimeCompact(ev.startDate);
                     const timeHtml = timeStr ? `<span class="calendar-month-event-time">${this.escapeHtml(timeStr)}</span>` : "";
-                    return `<div class="calendar-month-event-chip" data-event-idx="${this.events.indexOf(ev)}">${timeHtml}${this.escapeHtml(ev.title || "Untitled")}</div>`;
+                    const colorClass = this.getEventColorClass(ev.title);
+                    return `<div class="calendar-month-event-chip${colorClass ? ` ${colorClass}` : ""}" data-event-idx="${this.events.indexOf(ev)}">${timeHtml}${this.escapeHtml(ev.title || "Untitled")}</div>`;
                 })
                 .join("") + (remaining > 0 ? `<div class="calendar-month-event-more" data-day-key="${cell.key}">+${remaining} more</div>` : "");
 
@@ -258,9 +281,11 @@ class CalendarCard extends NexusCard {
                 groupHeaderHtml = `<li class="calendar-agenda-day-label">${dayLabel}</li>`;
             }
 
+            const colorClass = this.getEventColorClass(event.title);
+
             return `
                 ${groupHeaderHtml}
-                <li class="calendar-event-item" data-event-idx="${this.events.indexOf(event)}">
+                <li class="calendar-event-item${colorClass ? ` ${colorClass}` : ""}" data-event-idx="${this.events.indexOf(event)}">
                     <div class="event-meta">
                         <span class="event-time">${this.escapeHtml(timeStr)}</span>
                     </div>
