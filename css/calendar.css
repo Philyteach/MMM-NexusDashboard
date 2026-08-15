@@ -50,7 +50,7 @@
 }
 
 .event-time {
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .event-title {
@@ -342,7 +342,7 @@
 
 .calendar-daylist-item .event-time {
   font-size: 0.75rem;
-  color: #666;
+  color: rgba(255, 255, 255, 0.7);
   min-width: 60px;
   flex-shrink: 0;
 }
