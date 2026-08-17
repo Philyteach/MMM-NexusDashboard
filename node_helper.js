@@ -83,6 +83,15 @@ const FRIDGE_FREEZER_CHANNELS = {
     4: { location: "Garage Freezer", thresholdF: 15, debounceMs: 45 * 60 * 1000 }
 };
 
+// How long rtl_433 can go without a reading before we fail over back to
+// Tuya cloud polling - deliberately much more forgiving than
+// RtlWeatherClient's own staleTimeoutMs (see lib/RtlWeatherClient.js),
+// which only governs the "sensorOnline" UI badge and fires in ~90s. That
+// timeout is right for a badge but far too twitchy for deciding whether to
+// start hitting a rate-limited paid API, so this is a separate threshold.
+const TUYA_WATCHDOG_STALE_MS = 37 * 60 * 1000; // 37 min = ~2x rtl_433's ~19min cadence, minus a minute of margin
+const TUYA_WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
+
 // YYYY-MM-DD in local time - used to detect a day rollover for the
 // station's daily high/low and rain-since-midnight baseline.
 function localDateString(date = new Date()) {
@@ -273,6 +282,8 @@ module.exports = NodeHelper.create({
     startWeatherStationClients: function() {
         const RTL_GRACE_MS = 2 * 60 * 1000;
         this.rtlConfirmed = false;
+        this.tuyaRunning = false;
+        this.lastRtlReadingAt = null;
 
         this.startTuyaWeatherClient();
         this.startRtlWeatherClient();
@@ -284,6 +295,42 @@ module.exports = NodeHelper.create({
                 console.warn("[Nexus Station] No rtl_433 reading within the grace window - staying on Tuya cloud polling.");
             }
         }, RTL_GRACE_MS);
+
+        // Watchdog: if rtl_433 has already proven itself once but then goes
+        // quiet for a long while (crash loop, dead battery, SDR unplugged),
+        // fail back over to Tuya cloud polling until rtl_433 recovers. Stays
+        // out of the way entirely on deployments where rtl_433 never gets
+        // confirmed in the first place (e.g. no SDR dongle) - Tuya just
+        // keeps running indefinitely there, same as before this watchdog
+        // existed.
+        this.tuyaWatchdogTimer = setInterval(() => {
+            if (!this.rtlConfirmed) return; // never confirmed at all (e.g. no SDR dongle) - Tuya just stays on, nothing to watch for
+            if (this.lastRtlReadingAt === null) return;
+            const silentForMs = Date.now() - this.lastRtlReadingAt;
+            if (silentForMs > TUYA_WATCHDOG_STALE_MS && !this.tuyaRunning) {
+                console.warn(`[Nexus Station] rtl_433 silent for ${Math.round(silentForMs / 60000)} min - failing over to Tuya cloud.`);
+                this.startTuyaPolling();
+            }
+        }, TUYA_WATCHDOG_CHECK_INTERVAL_MS);
+    },
+
+    /**
+     * Idempotent start/stop wrappers around tuyaClient.start()/stop(),
+     * tracked via this.tuyaRunning so both the initial boot-time start and
+     * the watchdog's failover start go through the same logged path.
+     */
+    startTuyaPolling: function() {
+        if (!this.tuyaClient || this.tuyaRunning) return;
+        console.log("[Nexus Station][Tuya] Starting Tuya cloud polling.");
+        this.tuyaClient.start();
+        this.tuyaRunning = true;
+    },
+
+    stopTuyaPolling: function() {
+        if (!this.tuyaClient || !this.tuyaRunning) return;
+        console.log("[Nexus Station][Tuya] Stopping Tuya cloud polling.");
+        this.tuyaClient.stop();
+        this.tuyaRunning = false;
     },
 
     /**
@@ -355,13 +402,10 @@ module.exports = NodeHelper.create({
         });
 
         this.tuyaClient.onUpdate = (reading) => {
-            // Once rtl_433 is confirmed live, Tuya's onUpdate is a no-op -
-            // the client keeps running (harmless, low resource use) but
-            // stops writing over the faster/more-detailed rtl_433 data.
-            // (Rather than calling this.tuyaClient.stop() here, which
-            // would assume TuyaWeatherClient has a stop() method - safer
-            // to just ignore its updates than risk calling something
-            // that might not exist.)
+            // Once rtl_433 is confirmed live, startTuyaPolling actually
+            // stops this client (see stopTuyaPolling/the watchdog above),
+            // so this guard is mostly a safety net for the brief window
+            // between rtl_433 recovering and stopTuyaPolling() landing.
             if (this.rtlConfirmed) return;
             this.stationCache = { ...this.stationCache, ...reading };
             console.log(`[Nexus Station][Tuya] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
@@ -369,7 +413,7 @@ module.exports = NodeHelper.create({
             this.broadcastStationData();
         };
 
-        this.tuyaClient.start();
+        this.startTuyaPolling();
     },
 
     /**
@@ -395,6 +439,9 @@ module.exports = NodeHelper.create({
                 console.log("[Nexus Station] rtl_433 confirmed reporting - now the active station source.");
                 this.rtlConfirmed = true;
             }
+            this.lastRtlReadingAt = Date.now();
+            if (this.tuyaRunning) this.stopTuyaPolling();
+
             // Merge rather than replace: rtl_433 doesn't hear indoor
             // temp/humidity (that only exists on the console/Tuya side),
             // so keep whatever Tuya last reported for those two fields
