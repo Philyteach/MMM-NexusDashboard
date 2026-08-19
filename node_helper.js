@@ -247,12 +247,24 @@ module.exports = NodeHelper.create({
                 if (parts.length >= 2) {
                     const key = parts[0].trim();
                     let value = parts.slice(1).join("=").trim();
-                    
+
+                    // Strip a trailing " # comment" (unquoted values only - a
+                    // quoted value like CALENDAR_URL could legitimately
+                    // contain '#', so leave quoted values alone here).
+                    const isQuoted = (value.startsWith('"') && value.endsWith('"')) ||
+                        (value.startsWith("'") && value.endsWith("'"));
+                    if (!isQuoted) {
+                        const commentIndex = value.indexOf("#");
+                        if (commentIndex !== -1) {
+                            value = value.slice(0, commentIndex).trim();
+                        }
+                    }
+
                     // Sanitize trailing commas and quotation marks from manual configuration entry
                     if (value.endsWith(",")) {
                         value = value.slice(0, -1).trim();
                     }
-                    if ((value.startsWith('"') && value.endsWith('"')) || 
+                    if ((value.startsWith('"') && value.endsWith('"')) ||
                         (value.startsWith("'") && value.endsWith("'"))) {
                         value = value.slice(1, -1).trim();
                     }
@@ -551,12 +563,21 @@ module.exports = NodeHelper.create({
         const env = this.parseEnvFile();
         const host = env.FRIDGE_NTFY_HOST || "835alert.work";
         const topic = env.FRIDGE_NTFY_TOPIC || "freezer-alerts";
+        const token = env.FRIDGE_NTFY_TOKEN;
         const message = `${location} is at ${Math.round(tempF)}°F (above ${thresholdF}°F threshold)`;
+
+        if (!token) {
+            console.error("[Nexus Fridge Alert] ntfy push skipped: FRIDGE_NTFY_TOKEN is not set in config/.env");
+            return;
+        }
 
         try {
             const response = await fetch(`https://${host}/${topic}`, {
                 method: "POST",
-                headers: { "Content-Type": "text/plain" },
+                headers: {
+                    "Content-Type": "text/plain",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: message
             });
             if (!response.ok) throw new Error(`ntfy returned status ${response.status}`);
