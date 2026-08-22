@@ -17,11 +17,14 @@ class AuroraCard extends NexusCard {
         const slot = document.querySelector(`[data-badge-target="${targetName}"]`);
         if (!slot) return;
 
-        // Active watches take priority over the aurora badge in a shared
-        // slot - back off entirely rather than fight WatchBadgeCard over
-        // slot.innerHTML. See WatchBadgeCard.js for the other half of this.
+        // Active watches AND an active lightning threat both take priority
+        // over the aurora badge in a shared slot - back off entirely
+        // rather than fight WatchBadgeCard/LightningBadgeCard over
+        // slot.innerHTML. See those two files for the rest of this
+        // priority chain (watch > lightning > aurora).
         window.NexusBadgeSlotOwners = window.NexusBadgeSlotOwners || {};
         if (window.NexusBadgeSlotOwners[targetName] === "watch") return;
+        if (window.NexusBadgeSlotOwners[targetName] === "lightning") return;
 
         if (!this.auroraData.badgeVisible) {
             slot.innerHTML = "";

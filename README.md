@@ -11,6 +11,7 @@ A modern, card-based dashboard framework for [MagicMirror²](https://magicmirror
 - **Calendar** (compact) — upcoming events sidebar
 - **Immich slideshow** — rotating photos pulled from a self-hosted [Immich](https://immich.app/) server
 - **Aurora badge** (conditional) — a small icon that appears in the Clock tile's unused corner space when geomagnetic activity makes aurora visibility plausible at your latitude. Invisible the rest of the time. See [Aurora Borealis Tracker](#aurora-borealis-tracker) below.
+- **Lightning threat badge** (conditional) — shares the same badge slot as the Aurora badge and appears when Xweather's Lightning Threats feed reports an active/forecast lightning zone covering your location; invisible otherwise. See [Lightning Threat Badge](#lightning-threat-badge) below.
 
 ### Forecast
 
@@ -52,6 +53,18 @@ This cascading design means the expensive grid fetch only ever happens on nights
 **The badge-slot pattern:** rather than giving Aurora its own grid tile, it docks into a small reusable "slot" — a `.nexus-badge-slot` div with a `data-badge-target` attribute — that any card can opt into by adding one line of markup and `position: relative` to its own container. The Clock card hosts the first one (it has unused corner space), but the pattern is intentionally generic: any future pop-up indicator can target any card by name via config, with zero coupling between the host card and whatever badges dock into it. See `css/badges.css` and `cards/AuroraCard.js`.
 
 **Config:** add `AURORA_KP_THRESHOLD` to your `.env` (defaults to `6` if omitted) — see the setup table below.
+
+## Lightning Threat Badge
+
+A second small badge, sharing the exact same badge-slot mechanism as the Aurora tracker above, driven by the [Xweather](https://www.xweather.com/) (Vaisala AerisWeather) Lightning Threats endpoint — one of the free Weather API endpoints unlocked by the [PWSWeather Contributor Plan](https://www.pwsweather.com/), which this station already qualifies for by pushing its own readings to PWSWeather (see [Weather Station](#weather-station-right-now-panel) below and `lib/PwsWeatherClient.js`).
+
+`node_helper.js` polls `lightning/threats/{lat},{lon}` (your configured `LATITUDE`/`LONGITUDE`) on its own timer, independent of screen state, and caches the result the same way the Aurora check does. The endpoint returns a list of currently-tracked lightning threat zones near that point — an **empty list is the "all clear" signal**; there's no separate numeric threat-level field. When the list is non-empty, the badge appears, and its tooltip shows whether the nearest zone is flagged `severe` plus roughly when it's expected to clear.
+
+**Why the default poll interval is 30 minutes, not 5:** this specific endpoint carries a 10x "access" multiplier against Xweather's daily quota (confirmed in their docs), so every poll actually costs 10 of the plan's 1,000 daily accesses. At 30 minutes that's 480 accesses/day (48% of quota) — comfortable headroom for retries and for other Xweather endpoints down the road. See the comment at the top of `lib/XweatherClient.js` for the full math before changing `XWEATHER_POLL_INTERVAL_MS`.
+
+**Badge priority:** in the shared slot, an active NWS watch badge still wins outright (it's a vetted, human-issued product), the lightning badge is next, and the Aurora badge is last — an unspecified judgment call made while building this, see the comment at the top of `cards/LightningBadgeCard.js` if you'd rather reorder it.
+
+**Config:** add `XWEATHER_CLIENT_ID`/`XWEATHER_CLIENT_SECRET` to your `.env` (get these from the Xweather developer dashboard once your PWSWeather station passes QA — can take a few days after it starts reporting); optionally `XWEATHER_POLL_INTERVAL_MS` to override the 30-minute default. Leave the client ID/secret blank to disable the badge entirely — see the setup table below.
 
 ## Weather Station (Right Now panel)
 
@@ -176,6 +189,7 @@ Fill in `config/.env` with real values. **This file is gitignored — never comm
 | `GOOGLE_MAPS_API_KEY` / `HOME_ADDRESS` | Travel card |
 | `COMMUTE_1_*` / `COMMUTE_2_*` | Travel card's two commute tiles |
 | `AURORA_KP_THRESHOLD` | Aurora badge sensitivity (optional — defaults to `6` if omitted) |
+| `XWEATHER_CLIENT_ID` / `XWEATHER_CLIENT_SECRET` / `XWEATHER_POLL_INTERVAL_MS` | Lightning threat badge (optional — leave blank to disable; see [Lightning Threat Badge](#lightning-threat-badge)) |
 | `TUYA_CLIENT_ID` / `TUYA_CLIENT_SECRET` / `TUYA_DEVICE_ID` / `TUYA_BASE_URL` | Weather station "Right Now" panel — Tuya Cloud source (see [Weather Station](#weather-station-right-now-panel)) |
 | `RTL433_COMMAND` / `RTL433_ARGS` / `RTL433_FREQUENCY` / `RTL433_DEVICE_ID` | Weather station "Right Now" panel — rtl_433 source, the preferred/faster path (optional — see [Weather Station](#weather-station-right-now-panel)) |
 
@@ -260,13 +274,15 @@ pm2 restart mm
 - `node_helper.js` handles all outbound API calls (NWS, USNO, Immich, Google Routes, NOAA space weather) and secrets — the front-end never touches API keys directly.
 - The Travel card's predictive leave-time scheduler runs independently of card visibility (in `node_helper.js`, not tied to `TravelCard.js`'s lifecycle), since it needs to capture a reading the evening before an appointment regardless of whether anyone's looking at the mirror. Predictions persist to `config/travel.json` (gitignored) so a restart mid-cycle doesn't lose a captured baseline.
 - The Aurora tracker follows the same "runs independently of screen state" philosophy — its Kp/OVATION poll lives in `node_helper.js` and updates a module-level cache (`this.auroraCache`) that's replayed to `AuroraCard` on both initial load and every workspace switch, so the badge is always current even if the card was just instantiated.
-- **Badge-slot pattern**: a small, reusable way to surface a compact indicator inside another card's tile without any coupling between the two. A host card opts in with `position: relative` plus an empty `<div class="nexus-badge-slot ..." data-badge-target="name">`; anything wanting to render into that slot just does `document.querySelector('[data-badge-target="name"]')` and writes into it. No shared state, no host-card code changes needed per badge. Currently used by Aurora targeting the Clock card; designed to support additional badges/targets later.
+- **Badge-slot pattern**: a small, reusable way to surface a compact indicator inside another card's tile without any coupling between the two. A host card opts in with `position: relative` plus an empty `<div class="nexus-badge-slot ..." data-badge-target="name">`; anything wanting to render into that slot just does `document.querySelector('[data-badge-target="name"]')` and writes into it. No shared state, no host-card code changes needed per badge. Currently used by Watches, Lightning, and Aurora, all targeting the Clock card; designed to support additional badges/targets later.
+- **Badge priority chain**: when more than one badge wants the same slot, each checks `window.NexusBadgeSlotOwners[targetName]` before rendering and backs off if a higher-priority badge already claims it. Current order is watch > lightning > aurora (see `cards/WatchBadgeCard.js`, `cards/LightningBadgeCard.js`, `cards/AuroraCard.js`) — when a higher-priority badge clears, it calls the next card's `render()` directly so the slot doesn't sit empty until that card's own next poll.
 
 ## Known limitations / things to watch
 
 - The Travel card's traffic-condition thresholds (Light ≤5% over normal, Moderate ≤25%, Heavy beyond that) are a starting point, not a Google-provided standard — worth tuning after watching it against real commutes.
 - Google's Routes API requires a real future-ish timestamp if you ever add `departureTime` back in — omitting it (current behavior) avoids a race condition where a client-generated "now" timestamp arrives at Google already in the past.
 - NOAA's space weather JSON feeds (`noaa-planetary-k-index.json`) have changed shape before (a March 2026 format change moved from header-row-plus-array-rows to plain keyed objects) — if the Aurora badge silently stops updating, check whether NOAA's response shape changed again before assuming the poll logic is broken.
+- The lightning threat badge was built without live Xweather credentials on hand (the station's PWSWeather QA period wasn't finished yet) — its request/parsing logic and the badge's show/hide behavior were verified against Xweather's published response schema and a set of simulated API responses, not a real API call. Re-verify against a live "active threat" response once credentials are available.
 
 ## License
 

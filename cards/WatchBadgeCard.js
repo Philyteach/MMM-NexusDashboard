@@ -5,11 +5,14 @@
  * by node_helper's activeWatches array, piggybacked on the existing
  * NEXUS_WEATHER_DATA payload - no separate poll of its own.
  *
- * Takes priority over AuroraCard in a shared slot: writes its "watch" claim
- * into window.NexusBadgeSlotOwners, which AuroraCard checks before it
- * renders. When the last watch clears, this card relinquishes the slot and
- * nudges AuroraCard to re-render immediately rather than waiting out its
- * own slow poll cadence.
+ * Outranks both LightningBadgeCard and AuroraCard in a shared slot: writes
+ * its "watch" claim into window.NexusBadgeSlotOwners, which both of those
+ * check before they render. When the last watch clears, this card
+ * relinquishes the slot and nudges LightningBadgeCard to re-render
+ * immediately rather than waiting out its own poll cadence -
+ * LightningBadgeCard in turn hands off to AuroraCard if it has nothing to
+ * show, so a single call here cascades through the full priority chain
+ * (watch > lightning > aurora). See LightningBadgeCard.js/AuroraCard.js.
  */
 class WatchBadgeCard extends NexusCard {
     start() {
@@ -34,7 +37,7 @@ class WatchBadgeCard extends NexusCard {
             if (window.NexusBadgeSlotOwners[targetName] === "watch") {
                 delete window.NexusBadgeSlotOwners[targetName];
                 slot.innerHTML = "";
-                window.MMM_NexusDashboard_CardManager?.instances["AuroraCard"]?.render();
+                window.MMM_NexusDashboard_CardManager?.instances["LightningBadgeCard"]?.render();
             }
             return;
         }

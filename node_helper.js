@@ -16,6 +16,7 @@ const TuyaWeatherClient = require("./lib/TuyaWeatherClient.js");
 const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
 const CwopClient = require("./lib/CwopClient.js");
 const PwsWeatherClient = require("./lib/PwsWeatherClient.js");
+const XweatherClient = require("./lib/XweatherClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -135,6 +136,14 @@ module.exports = NodeHelper.create({
         this.auroraCache = { badgeVisible: false, kpValue: null, probability: null, updatedAt: null };
         this.runAuroraCheck();
         setInterval(() => this.runAuroraCheck(), 15 * 60 * 1000);
+
+        // Lightning threat badge state, refreshed independently of screen/
+        // workspace by XweatherClient's own poll timer - see
+        // startXweatherClient() below. Defaulted here (not just inside
+        // startXweatherClient) so NEXUS_INIT always has something sane to
+        // replay even when XWEATHER_CLIENT_ID/SECRET are missing and that
+        // client never actually starts.
+        this.lightningCache = { hasThreat: false, severe: false, threatCount: 0, nearestThreat: null, updatedAt: null };
 
         // Persisted rolling history (temp/pressure snapshots, ~5min
         // sampling) plus the daily high/low and rain-since-midnight
@@ -301,6 +310,7 @@ module.exports = NodeHelper.create({
         this.startRtlWeatherClient();
         this.startCwopClient();
         this.startPwsWeatherClient();
+        this.startXweatherClient();
 
         setTimeout(() => {
             if (!this.rtlConfirmed) {
@@ -390,6 +400,41 @@ module.exports = NodeHelper.create({
         });
         this.pwsWeatherClient.getReading = () => ({ ...this.stationCache, ...this.computeStationExtras() });
         this.pwsWeatherClient.start();
+    },
+
+    /**
+     * Reads Xweather (AerisWeather Contributor Plan) credentials from .env
+     * and starts the inbound poll of the Lightning Threats endpoint - the
+     * one read-side use of the free API access granted for sharing data
+     * with PWSWeather (see startPwsWeatherClient above). Reuses the
+     * dashboard's own LATITUDE/LONGITUDE rather than requiring separate
+     * coordinates. Missing credentials/coordinates disable this quietly,
+     * same pattern as CWOP/PWSWeather - the lightning badge is a nice-to-
+     * have, not something the rest of the dashboard depends on.
+     */
+    startXweatherClient: function() {
+        const env = this.parseEnvFile();
+        if (!env.XWEATHER_CLIENT_ID || !env.XWEATHER_CLIENT_SECRET) {
+            console.warn("[Nexus Xweather] Client ID or secret missing from .env - lightning threat badge disabled.");
+            return;
+        }
+        if (!env.LATITUDE || !env.LONGITUDE) {
+            console.warn("[Nexus Xweather] LATITUDE/LONGITUDE missing from .env - lightning threat badge disabled.");
+            return;
+        }
+
+        this.xweatherClient = new XweatherClient({
+            clientId: env.XWEATHER_CLIENT_ID,
+            clientSecret: env.XWEATHER_CLIENT_SECRET,
+            latitude: parseFloat(env.LATITUDE),
+            longitude: parseFloat(env.LONGITUDE),
+            pollIntervalMs: env.XWEATHER_POLL_INTERVAL_MS ? parseInt(env.XWEATHER_POLL_INTERVAL_MS, 10) : undefined
+        });
+        this.xweatherClient.onUpdate = (reading) => {
+            this.lightningCache = reading;
+            this.sendSocketNotification("NEXUS_LIGHTNING_UPDATE", this.lightningCache);
+        };
+        this.xweatherClient.start();
     },
 
     /**
@@ -847,6 +892,7 @@ module.exports = NodeHelper.create({
             case "NEXUS_INIT":
                 this.loadAllConfigurations();
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
+                this.sendSocketNotification("NEXUS_LIGHTNING_UPDATE", this.lightningCache);
                 this.broadcastStationData();
                 this.broadcastFridgeAlerts();
                 this.broadcastFridgeHistory();

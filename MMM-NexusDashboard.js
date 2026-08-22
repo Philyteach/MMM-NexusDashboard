@@ -52,6 +52,7 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/TravelCard.js"),
             this.file("cards/AuroraCard.js"),
             this.file("cards/WatchBadgeCard.js"),
+            this.file("cards/LightningBadgeCard.js"),
             this.file("cards/FridgeAlertCard.js"),
             this.file("cards/FridgeTempsCard.js")
         ];
@@ -142,17 +143,19 @@ Module.register("MMM-NexusDashboard", {
         // to work, but the registry (and its debug logging) is never actually used.
         window.MMM_NexusDashboard_CardManager = this.cardManager;
 
-        // AuroraCard and WatchBadgeCard render into another card's badge
-        // slot (data-badge-target="clock") rather than occupying their own
-        // grid cell, so they are deliberately never listed in modes.json's
-        // per-section "cards" arrays. WorkspaceManager only ever asks
-        // CardManager for cards that ARE listed there, so without this call
-        // neither card would ever be instantiated — this.instances[...]
-        // would stay undefined forever, silently no-op'ing every
-        // updateState() call from NEXUS_WEATHER_DATA/NEXUS_AURORA_DATA no
+        // AuroraCard, WatchBadgeCard, and LightningBadgeCard render into
+        // another card's badge slot (data-badge-target="clock") rather
+        // than occupying their own grid cell, so they are deliberately
+        // never listed in modes.json's per-section "cards" arrays.
+        // WorkspaceManager only ever asks CardManager for cards that ARE
+        // listed there, so without this call none of these three would
+        // ever be instantiated — this.instances[...] would stay undefined
+        // forever, silently no-op'ing every updateState() call from
+        // NEXUS_WEATHER_DATA/NEXUS_AURORA_DATA/NEXUS_LIGHTNING_UPDATE no
         // matter how correct their own logic is.
         this.cardManager.instantiateOverlay("AuroraCard");
         this.cardManager.instantiateOverlay("WatchBadgeCard");
+        this.cardManager.instantiateOverlay("LightningBadgeCard");
 
         this.setupSwipeGestures();
 
@@ -421,6 +424,16 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["AuroraCard"]?.updateState(payload);
                 break;
 
+            case "NEXUS_LIGHTNING_UPDATE":
+                this.latestLightningData = payload;
+                // Same ordering rationale as the WatchBadgeCard replay
+                // below: LightningBadgeCard outranks AuroraCard in the
+                // shared slot, so if both happen to update around the same
+                // time, Lightning's updateState() should be the one that
+                // gets the final say on slot ownership.
+                this.cardManager.instances["LightningBadgeCard"]?.updateState(payload);
+                break;
+
             case "NEXUS_STATION_DATA":
                 // Live outdoor/indoor readings from the Tuya-polled VEVOR
                 // weather station. Cached the same way as the other
@@ -651,6 +664,13 @@ Module.register("MMM-NexusDashboard", {
         if (this.latestAuroraData) {
             this.cardManager.instances["AuroraCard"]?.updateState(this.latestAuroraData);
         }
+        if (this.latestLightningData) {
+            // Replayed after Aurora, same reasoning as Watch below -
+            // Lightning outranks Aurora in the shared slot, so its render
+            // should be the one that wins if both fire before the
+            // deferred Watch replay below runs.
+            this.cardManager.instances["LightningBadgeCard"]?.updateState(this.latestLightningData);
+        }
         if (this.latestStationData) {
             this.cardManager.instances["WeatherCard"]?.updateStationState?.(this.latestStationData);
             this.cardManager.instances["ForecastCard"]?.updateStationState?.(this.latestStationData);
@@ -672,9 +692,10 @@ Module.register("MMM-NexusDashboard", {
         // NEXUS_WEATHER_DATA handler above: none of these updateDom()
         // calls pass a speed/animation argument, so the rebuild should be
         // effectively immediate, and 100ms gives comfortable margin.
-        // Replayed after Aurora on purpose: WatchBadgeCard's updateState()
-        // claims the shared badge slot when watches are active, which
-        // should win over whatever Aurora just rendered.
+        // Replayed after Aurora and Lightning on purpose: WatchBadgeCard's
+        // updateState() claims the shared badge slot when watches are
+        // active, which should win over whatever either of those two just
+        // rendered (watch > lightning > aurora priority chain).
         setTimeout(() => {
             if (this.latestWatchData) {
                 this.cardManager.instances["WatchBadgeCard"]?.updateState(this.latestWatchData);
