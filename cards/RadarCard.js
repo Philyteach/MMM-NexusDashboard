@@ -98,7 +98,11 @@ class RadarCard extends NexusCard {
 
         RADAR_CARD_FRAME_OFFSETS_MIN.forEach((offsetMin) => {
             const ts = offsetMin === 0 ? "900913" : `900913-m${String(offsetMin).padStart(2, "0")}m`; // "900913" alone = most recent
-            const tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-${ts}/{z}/{x}/{y}.png`;
+            // IEM resolves "-mXXm" relative to request time, so this URL string is
+            // identical on every rebuild - without a cache-busting param, staying live
+            // depends entirely on the browser re-fetching over HTTP's Cache-Control
+            // (max-age=300) exactly on schedule, for as long as this page stays open.
+            const tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-${ts}/{z}/{x}/{y}.png?_=${buildTime}`;
 
             const layer = L.tileLayer(tileUrl, {
                 opacity: 0, // Hidden initially, faded in/out dynamically by startLoop()
