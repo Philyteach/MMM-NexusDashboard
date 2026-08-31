@@ -30,6 +30,13 @@ Module.register("MMM-NexusDashboard", {
             "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
             "https://unpkg.com/hammerjs@2.0.8/hammer.min.js",
 
+            // 1b. MapLibre GL (vector basemap renderer) + its Leaflet bridge -
+            // used by RadarCard/RadarFullCard for Carto's vector "dark-matter"
+            // style. Requires WebGL/GPU compositing - see ELECTRON_ENABLE_GPU
+            // in electron.js.
+            "https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js",
+            "https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js",
+
             // 2. Base Utility Class
             this.file("lib/NexusCard.js"),
 
@@ -53,6 +60,7 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/AuroraCard.js"),
             this.file("cards/WatchBadgeCard.js"),
             this.file("cards/LightningBadgeCard.js"),
+            this.file("cards/LightningStrikeCard.js"),
             this.file("cards/FridgeAlertCard.js"),
             this.file("cards/FridgeTempsCard.js")
         ];
@@ -64,7 +72,8 @@ Module.register("MMM-NexusDashboard", {
     getStyles: function() {
         return [
             "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-            this.file("css/theme.css"),     
+            "https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css",
+            this.file("css/theme.css"),
             this.file("css/layout.css"),    
             this.file("css/cards.css"),     
             this.file("css/clock.css"),     
@@ -78,6 +87,7 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/server.css"),
             this.file("css/travel.css"),
             this.file("css/badges.css"),
+            this.file("css/lightning-strike.css"),
             this.file("css/mascot.css"),
             this.file("css/fridge-alert.css"),
             this.file("css/fridge-temps.css")
@@ -434,6 +444,15 @@ Module.register("MMM-NexusDashboard", {
                 this.cardManager.instances["LightningBadgeCard"]?.updateState(payload);
                 break;
 
+            case "NEXUS_LIGHTNING_STRIKE":
+                // Local AS3935 hardware sensor - separate data source and
+                // card (LightningStrikeCard, School-workspace-only) from
+                // the Xweather cloud badge above. No shared-slot ordering
+                // concern here since it doesn't touch NexusBadgeSlotOwners.
+                this.latestLightningStrikeData = payload;
+                this.cardManager.instances["LightningStrikeCard"]?.updateState(payload);
+                break;
+
             case "NEXUS_STATION_DATA":
                 // Live outdoor/indoor readings from the Tuya-polled VEVOR
                 // weather station. Cached the same way as the other
@@ -670,6 +689,9 @@ Module.register("MMM-NexusDashboard", {
             // should be the one that wins if both fire before the
             // deferred Watch replay below runs.
             this.cardManager.instances["LightningBadgeCard"]?.updateState(this.latestLightningData);
+        }
+        if (this.latestLightningStrikeData) {
+            this.cardManager.instances["LightningStrikeCard"]?.updateState(this.latestLightningStrikeData);
         }
         if (this.latestStationData) {
             this.cardManager.instances["WeatherCard"]?.updateStationState?.(this.latestStationData);

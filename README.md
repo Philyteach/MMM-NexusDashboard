@@ -66,6 +66,22 @@ A second small badge, sharing the exact same badge-slot mechanism as the Aurora 
 
 **Config:** add `XWEATHER_CLIENT_ID`/`XWEATHER_CLIENT_SECRET` to your `.env` (get these from the Xweather developer dashboard once your PWSWeather station passes QA — can take a few days after it starts reporting); optionally `XWEATHER_POLL_INTERVAL_MS` to override the 30-minute default. Leave the client ID/secret blank to disable the badge entirely — see the setup table below.
 
+## Lightning Sensor (School workspace only)
+
+A physical AS3935 lightning sensor (a cheap GY-AS3935 clone, wired over SPI — the board's I2C mode never got the chip to respond on the bus, so SPI is the only mode this has been built/tested against), completely separate from the Xweather cloud badge above. Detects real strikes at IRQ latency instead of a poll cadence, with no forecast/zone information — the two features are complementary, not redundant, which is why they're wired as entirely independent data paths (`NEXUS_LIGHTNING_UPDATE`/`LightningBadgeCard` for Xweather, `NEXUS_LIGHTNING_STRIKE`/`LightningStrikeCard` for the hardware sensor) rather than sharing a cache or badge slot.
+
+This is **opt-in and School-workspace-only by design** — it exists for recess go/no-go decisions at a school deployment, not for the Home Pi. Leaving `LIGHTNING_SENSOR_ENABLED` unset in `.env` means `node_helper.js` never spawns the sensor daemon, and `LightningStrikeCard` isn't part of the shared `config/modes.json` at all — a deployment that wants it adds `"LightningStrikeCard"` to its own (gitignored) `config/school.json`.
+
+**How it works:** `node_helper.js` spawns `scripts/lightning/lightning_daemon.py`, a long-running subprocess that calibrates the AS3935 once at startup, then listens on the IRQ GPIO pin for the rest of its life and emits one JSON line per event to stdout (mirrors how `RTL433_COMMAND`/`lib/RtlWeatherClient.js` already handles the rtl_433 subprocess). `lib/LightningSensorClient.js` parses that stream and calls back into `node_helper.js`, which broadcasts real strikes as `NEXUS_LIGHTNING_STRIKE`. Only `type: "lightning"` events reach the frontend — `disturber`/`noise` events are expected background chatter and are filtered out in `node_helper.js`, never broadcast.
+
+Unlike the badge-slot cards, `LightningStrikeCard` renders as its own grid tile with an explicit "sensor offline" / "no lightning detected nearby" / "lightning detected" state, rather than disappearing when there's nothing to report — for a go/no-go safety tool, silence would be indistinguishable from "the card never loaded," so it stays visible.
+
+**No Python AS3935 library on PyPI/piwheels supports SPI** (`RPi_AS3935`, `as3935` — both I2C-only). `scripts/lightning/as3935_spi.py` is a from-scratch SPI driver, ported from `RPi_AS3935`'s register logic (same register map, different transport) and confirmed against real hardware.
+
+**Noise floor tuning matters a lot:** at the AS3935's factory defaults (noise floor 2, watchdog threshold 2), a board sitting on a breadboard right next to a Pi 4 produced hundreds of false disturber/noise events per second from the Pi's own switching regulators and USB traffic — not usable. `LIGHTNING_NOISE_FLOOR`/`LIGHTNING_WATCHDOG_THRESHOLD` default to 7/10, the first setting found that held a clean baseline (zero spurious events over a 20s test) while still reliably catching a real tap/scratch test on the antenna. If the sensor ends up mounted further from RF noise sources (worth trying at the school deployment), lower these for better sensitivity.
+
+**Config:** set `LIGHTNING_SENSOR_ENABLED=true` in `.env` to spawn the daemon; `LIGHTNING_SENSOR_COMMAND`/`LIGHTNING_SENSOR_ARGS` to override the default `python3 scripts/lightning/lightning_daemon.py` invocation (e.g. a venv interpreter path); `LIGHTNING_NOISE_FLOOR`/`LIGHTNING_WATCHDOG_THRESHOLD`/`LIGHTNING_IRQ_GPIO` to override sensor tuning. `LightningStrikeCard` itself reads `lightningSensor.distanceThresholdKm` (default `15`) and `lightningSensor.activeWindowMinutes` (default `30`) via `ConfigManager` — how close and how recent a strike has to be to show as active.
+
 ## Weather Station (Right Now panel)
 
 The Home workspace's compact Weather card includes a "Right Now" panel — current outdoor temp, feels-like, a wind label, and the outfit-suggestion mascot (see [Mascot Weather Character](#mascot-weather-character) below) — sourced from a physical VEVOR (YT60311) weather station. This is a separate data path from the NWS forecast that powers the rest of the Weather/Forecast cards.
@@ -190,6 +206,7 @@ Fill in `config/.env` with real values. **This file is gitignored — never comm
 | `COMMUTE_1_*` / `COMMUTE_2_*` | Travel card's two commute tiles |
 | `AURORA_KP_THRESHOLD` | Aurora badge sensitivity (optional — defaults to `6` if omitted) |
 | `XWEATHER_CLIENT_ID` / `XWEATHER_CLIENT_SECRET` / `XWEATHER_POLL_INTERVAL_MS` | Lightning threat badge (optional — leave blank to disable; see [Lightning Threat Badge](#lightning-threat-badge)) |
+| `LIGHTNING_SENSOR_ENABLED` / `LIGHTNING_SENSOR_COMMAND` / `LIGHTNING_SENSOR_ARGS` / `LIGHTNING_NOISE_FLOOR` / `LIGHTNING_WATCHDOG_THRESHOLD` / `LIGHTNING_IRQ_GPIO` | Local AS3935 lightning sensor, School workspace only (optional — leave `LIGHTNING_SENSOR_ENABLED` blank to disable; see [Lightning Sensor](#lightning-sensor-school-workspace-only)) |
 | `TUYA_CLIENT_ID` / `TUYA_CLIENT_SECRET` / `TUYA_DEVICE_ID` / `TUYA_BASE_URL` | Weather station "Right Now" panel — Tuya Cloud source (see [Weather Station](#weather-station-right-now-panel)) |
 | `RTL433_COMMAND` / `RTL433_ARGS` / `RTL433_FREQUENCY` / `RTL433_DEVICE_ID` | Weather station "Right Now" panel — rtl_433 source, the preferred/faster path (optional — see [Weather Station](#weather-station-right-now-panel)) |
 
@@ -283,6 +300,7 @@ pm2 restart mm
 - Google's Routes API requires a real future-ish timestamp if you ever add `departureTime` back in — omitting it (current behavior) avoids a race condition where a client-generated "now" timestamp arrives at Google already in the past.
 - NOAA's space weather JSON feeds (`noaa-planetary-k-index.json`) have changed shape before (a March 2026 format change moved from header-row-plus-array-rows to plain keyed objects) — if the Aurora badge silently stops updating, check whether NOAA's response shape changed again before assuming the poll logic is broken.
 - The lightning threat badge was built without live Xweather credentials on hand (the station's PWSWeather QA period wasn't finished yet) — its request/parsing logic and the badge's show/hide behavior were verified against Xweather's published response schema and a set of simulated API responses, not a real API call. Re-verify against a live "active threat" response once credentials are available.
+- The AS3935 lightning sensor's noise-floor/watchdog-threshold tuning (see [Lightning Sensor](#lightning-sensor-school-workspace-only)) was validated against real hardware but in one specific, fairly hostile RF environment — a breadboard sitting right next to the Pi 4 it's wired into. The daemon's calibration, IRQ handling, and event classification are all confirmed working against real disturber/lightning-classified IRQ events; genuine strike-distance accuracy over hours/days of real weather, and whether 7/10 is still the right setting once the sensor moves to a permanent enclosure (especially at the school deployment, likely a cleaner RF environment), have not been.
 
 ## License
 

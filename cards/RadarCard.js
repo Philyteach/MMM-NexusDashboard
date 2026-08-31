@@ -27,6 +27,8 @@ class RadarCard extends NexusCard {
         this.refreshTimer = null;
         this.lat = this.configManager.getEnv("LATITUDE", 40.2139);
         this.lon = this.configManager.getEnv("LONGITUDE", -75.0046);
+        this.cartoApiKey = this.configManager.getEnv("CARTO_API_KEY", "");
+        this.cartoBasemapMode = this.configManager.getEnv("CARTO_BASEMAP_MODE", "raster");
     }
 
     render() {
@@ -59,10 +61,33 @@ class RadarCard extends NexusCard {
             touchZoom: false
         }).setView([this.lat, this.lon], 8); // Zoom level 8 is ideal for regional storms
 
-        // 2. Add an ultra-sleek, clean Dark Matter base map (perfect for smart mirrors)
-        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-            maxZoom: 19
-        }).addTo(this.map);
+        // 2. Add Carto's Dark Matter basemap (perfect for smart mirrors).
+        // Raster by default - confirmed 2026-08-30 that this legacy dark_all
+        // path needs "key" (not "api_key") to drop the "API KEY REQUIRED"
+        // watermark Carto added in Aug 2026. Carto is retiring raster in
+        // favor of vector eventually, but their vector GL style needs WebGL,
+        // which fails to initialize on this deployment's Electron/GLES stack
+        // (ANGLE error 12289 - see mm.sh). Set CARTO_BASEMAP_MODE=vector once
+        // that's sorted out and the style.json key param below is confirmed
+        // (unverified as of this writing - the style JSON looked identical
+        // with/without a key param in testing, unlike the raster endpoint).
+        if (this.cartoBasemapMode === "vector") {
+            L.maplibreGL({
+                style: `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=${this.cartoApiKey}`
+            }).addTo(this.map);
+        } else {
+            L.tileLayer(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${this.cartoApiKey}`, {
+                maxZoom: 19
+            }).addTo(this.map);
+        }
+
+        // Carto's free tier requires visible attribution - see
+        // https://carto.com/attributions. attributionControl is off above
+        // (kiosk aesthetic) so this is added explicitly instead, styled
+        // small via radar.css rather than left at Leaflet's default look.
+        L.control.attribution({ position: "topright", prefix: false })
+            .addAttribution('&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
+            .addTo(this.map);
 
         // 3. Drop a minimalist marker directly on your home coordinate
         const pulseIcon = L.divIcon({

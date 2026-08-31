@@ -1,0 +1,66 @@
+/* cards/LightningStrikeCard.js - AS3935 local hardware sensor tile.
+   Three states: offline (sensor never confirmed live), clear (confirmed,
+   nothing nearby), active (real strike within the configured distance/
+   time window) - see LightningStrikeCard.js for the go/no-go rationale. */
+
+.nexus-lightning-strike-card {
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 0.75rem;
+}
+
+.nexus-lightning-strike-status {
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.nexus-lightning-strike-offline {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.nexus-lightning-strike-offline .nexus-lightning-strike-status {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.nexus-lightning-strike-clear {
+  border-color: rgba(74, 222, 128, 0.3);
+}
+.nexus-lightning-strike-clear .nexus-lightning-strike-status {
+  color: #4ADE80;
+}
+
+.nexus-lightning-strike-active {
+  border-color: rgba(250, 204, 21, 0.6);
+  background: rgba(120, 90, 0, 0.35);
+  animation: nexus-lightning-strike-pulse 2s ease-in-out infinite;
+}
+
+.nexus-lightning-strike-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.nexus-lightning-strike-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nexus-lightning-strike-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #FACC15;
+}
+
+.nexus-lightning-strike-meta {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@keyframes nexus-lightning-strike-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(250, 204, 21, 0); }
+  50% { box-shadow: 0 0 20px rgba(250, 204, 21, 0.4); }
+}

@@ -17,6 +17,7 @@ const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
 const CwopClient = require("./lib/CwopClient.js");
 const PwsWeatherClient = require("./lib/PwsWeatherClient.js");
 const XweatherClient = require("./lib/XweatherClient.js");
+const LightningSensorClient = require("./lib/LightningSensorClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -144,6 +145,20 @@ module.exports = NodeHelper.create({
         // replay even when XWEATHER_CLIENT_ID/SECRET are missing and that
         // client never actually starts.
         this.lightningCache = { hasThreat: false, severe: false, threatCount: 0, nearestThreat: null, updatedAt: null };
+
+        // Local AS3935 hardware sensor state - deliberately separate cache/
+        // notification name (lightningStrikeCache / NEXUS_LIGHTNING_STRIKE)
+        // from the Xweather cloud threat badge above (lightningCache /
+        // NEXUS_LIGHTNING_UPDATE). Same underlying phenomenon, two
+        // unrelated data sources with different latency/reliability
+        // characteristics - keeping them as separate caches avoids one
+        // silently overwriting or racing the other. sensorConfirmed
+        // mirrors rtlConfirmed's role: lets LightningStrikeCard tell "no
+        // strikes yet" apart from "no sensor hooked up at all" (School-
+        // workspace-only, LIGHTNING_SENSOR_ENABLED gated - see
+        // startLightningSensor() below).
+        this.lightningStrikeCache = { sensorConfirmed: false, lastStrike: null, updatedAt: null };
+        this.startLightningSensor();
 
         // Persisted rolling history (temp/pressure snapshots, ~5min
         // sampling) plus the daily high/low and rain-since-midnight
@@ -435,6 +450,66 @@ module.exports = NodeHelper.create({
             this.sendSocketNotification("NEXUS_LIGHTNING_UPDATE", this.lightningCache);
         };
         this.xweatherClient.start();
+    },
+
+    /**
+     * Spawns lightning_daemon.py (scripts/lightning/) and wires its events
+     * into lightningStrikeCache. School-workspace-only feature (see
+     * LightningStrikeCard.js) - off by default so the home Pi's .env can
+     * simply omit LIGHTNING_SENSOR_ENABLED and see zero behavior change.
+     *
+     * Default command spawns the daemon in this module's own scripts/
+     * directory via a bare `python3` on PATH; LIGHTNING_SENSOR_COMMAND/
+     * LIGHTNING_SENSOR_ARGS override that per-deployment (e.g. a venv
+     * interpreter path) the same way RTL433_COMMAND/RTL433_ARGS do for
+     * rtl_433 - see startRtlWeatherClient() above.
+     *
+     * LIGHTNING_NOISE_FLOOR/LIGHTNING_WATCHDOG_THRESHOLD default to 7/10 -
+     * tuned against a board sitting on a breadboard right next to this Pi,
+     * where the factory defaults (2/2) produced hundreds of false
+     * disturber/noise events per second from the Pi's own RF noise. Lower
+     * these if the sensor ends up mounted somewhere quieter (e.g. the
+     * school deployment, if it's not sitting directly on top of the Pi).
+     */
+    startLightningSensor: function() {
+        const env = this.parseEnvFile();
+        if (env.LIGHTNING_SENSOR_ENABLED !== "true") return;
+
+        const daemonPath = path.join(__dirname, "scripts", "lightning", "lightning_daemon.py");
+        const command = env.LIGHTNING_SENSOR_COMMAND || "python3";
+        const args = env.LIGHTNING_SENSOR_ARGS
+            ? env.LIGHTNING_SENSOR_ARGS.split(" ").filter(Boolean)
+            : [
+                daemonPath,
+                "--noise-floor", env.LIGHTNING_NOISE_FLOOR || "7",
+                "--watchdog-threshold", env.LIGHTNING_WATCHDOG_THRESHOLD || "10",
+                "--irq-gpio", env.LIGHTNING_IRQ_GPIO || "17"
+            ];
+
+        this.lightningSensorClient = new LightningSensorClient({ command, args });
+
+        this.lightningSensorClient.onReady = () => {
+            console.log("[Nexus Lightning] AS3935 calibrated and listening - sensor confirmed live.");
+            this.lightningStrikeCache = { ...this.lightningStrikeCache, sensorConfirmed: true, updatedAt: Date.now() };
+            this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
+        };
+
+        this.lightningSensorClient.onStrike = (event) => {
+            console.log(`[Nexus Lightning] Strike detected: ~${event.distance_km}km, energy ${event.energy}`);
+            this.lightningStrikeCache = {
+                ...this.lightningStrikeCache,
+                sensorConfirmed: true,
+                lastStrike: { distanceKm: event.distance_km, energy: event.energy, ts: event.ts },
+                updatedAt: Date.now()
+            };
+            this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
+        };
+
+        // Disturber/noise events are intentionally not broadcast to the
+        // frontend - they're expected background chatter (see the daemon's
+        // own tuning notes), not something a badge should ever surface.
+
+        this.lightningSensorClient.start();
     },
 
     /**
@@ -893,6 +968,7 @@ module.exports = NodeHelper.create({
                 this.loadAllConfigurations();
                 this.sendSocketNotification("NEXUS_AURORA_DATA", this.auroraCache);
                 this.sendSocketNotification("NEXUS_LIGHTNING_UPDATE", this.lightningCache);
+                this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
                 this.broadcastStationData();
                 this.broadcastFridgeAlerts();
                 this.broadcastFridgeHistory();

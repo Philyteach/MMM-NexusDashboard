@@ -64,6 +64,22 @@
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Carto attribution (required by their free-tier terms) - kept small and
+   low-contrast rather than Leaflet's default white attribution bar, to fit
+   the kiosk's dark glassmorphism look without looking out of place. */
+.leaflet-control-attribution {
+  background: rgba(10, 10, 10, 0.55) !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+  font-size: 0.6rem !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  margin: 6px !important;
+}
+
+.leaflet-control-attribution a {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
 /* Pulsing Home Marker Animation */
 .radar-home-marker {
   display: flex;

@@ -17,6 +17,10 @@ config/stationHistory.json
 config/fridgeHistory.json
 arduino/NexusRemote/secrets.h
 assets/icons/mascot/*.png
+# Python bytecode (scripts/lightning/)
+__pycache__/
+*.pyc
+
 # OS garbage
 .DS_Store
 Thumbs.db

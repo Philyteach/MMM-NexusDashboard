@@ -30,6 +30,8 @@ class RadarFullCard extends NexusCard {
         this.refreshTimer = null;
         this.lat = this.configManager.getEnv("LATITUDE", 40.2139);
         this.lon = this.configManager.getEnv("LONGITUDE", -75.0046);
+        this.cartoApiKey = this.configManager.getEnv("CARTO_API_KEY", "");
+        this.cartoBasemapMode = this.configManager.getEnv("CARTO_BASEMAP_MODE", "raster");
         this.activeAlert = null;
         // Timers only ever run while this card's workspace is the one on
         // screen - see suspend()/resume(), mirroring RadarCard's own
@@ -83,9 +85,25 @@ class RadarFullCard extends NexusCard {
             touchZoom: false
         }).setView([this.lat, this.lon], 8);
 
-        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-            maxZoom: 19
-        }).addTo(this.map);
+        // Raster by default; vector opt-in via CARTO_BASEMAP_MODE - see
+        // RadarCard.js's initializeMap() for the full explanation (Carto's
+        // Aug 2026 watermark, the "key" vs "api_key" param, and why vector
+        // isn't the default yet - WebGL fails to init on this deployment).
+        if (this.cartoBasemapMode === "vector") {
+            L.maplibreGL({
+                style: `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json?key=${this.cartoApiKey}`
+            }).addTo(this.map);
+        } else {
+            L.tileLayer(`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${this.cartoApiKey}`, {
+                maxZoom: 19
+            }).addTo(this.map);
+        }
+
+        // Carto's free tier requires visible attribution - see
+        // https://carto.com/attributions.
+        L.control.attribution({ position: "topright", prefix: false })
+            .addAttribution('&copy; <a href="https://carto.com/attributions">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
+            .addTo(this.map);
 
         const pulseIcon = L.divIcon({
             className: "radar-home-marker",
