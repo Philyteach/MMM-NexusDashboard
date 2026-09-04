@@ -62,7 +62,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("cards/LightningBadgeCard.js"),
             this.file("cards/LightningStrikeCard.js"),
             this.file("cards/FridgeAlertCard.js"),
-            this.file("cards/FridgeTempsCard.js")
+            this.file("cards/FridgeTempsCard.js"),
+            this.file("cards/FridgeAlertChartCard.js")
         ];
     },
 
@@ -90,7 +91,8 @@ Module.register("MMM-NexusDashboard", {
             this.file("css/lightning-strike.css"),
             this.file("css/mascot.css"),
             this.file("css/fridge-alert.css"),
-            this.file("css/fridge-temps.css")
+            this.file("css/fridge-temps.css"),
+            this.file("css/fridge-chart-overlay.css")
         ];
     },
 
@@ -480,6 +482,7 @@ Module.register("MMM-NexusDashboard", {
             case "NEXUS_FRIDGE_HISTORY":
                 this.latestFridgeHistory = payload || [];
                 this.cardManager.instances["FridgeTempsCard"]?.updateState(this.latestFridgeHistory);
+                this.cardManager.instances["FridgeAlertChartCard"]?.updateState(this.latestFridgeHistory);
                 break;
 
             case "IMMICH_PHOTOS_DATA":
@@ -703,6 +706,7 @@ Module.register("MMM-NexusDashboard", {
         }
         if (this.latestFridgeHistory) {
             this.cardManager.instances["FridgeTempsCard"]?.updateState(this.latestFridgeHistory);
+            this.cardManager.instances["FridgeAlertChartCard"]?.updateState(this.latestFridgeHistory);
         }
 
         this.updateDom();

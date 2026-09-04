@@ -55,3 +55,15 @@
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.6);
 }
+
+/* Sensor's gone quiet while still latched - dim the whole item so it reads
+   as "unconfirmed / last known" rather than a live, ongoing alert. */
+.nexus-fridge-alert-stale {
+  opacity: 0.6;
+}
+
+.nexus-fridge-alert-stale-notice {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #FBBF24;
+}

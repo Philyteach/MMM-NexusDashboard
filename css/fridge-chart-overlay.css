@@ -1,0 +1,67 @@
+/* MMM-NexusDashboard/css/fridge-chart-overlay.css
+ *
+ * Chrome for FridgeAlertChartCard - the tile styling itself (name/current/
+ * graph) reuses css/fridge-temps.css's .nexus-fridge-temps-* classes
+ * as-is, so only the overlay container and header live here.
+ *
+ * .nexus-section-main needs position:relative so this can sit absolutely
+ * over ImmichCard within the Home workspace's main column (see
+ * css/layout.css's .nexus-section for the shared base).
+ */
+.nexus-workspace-home .nexus-section-main {
+  position: relative;
+}
+
+.nexus-fridge-chart-overlay-empty {
+  display: none;
+}
+
+.nexus-fridge-chart-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-sizing: border-box;
+  padding: 2.5rem 3rem;
+  background: rgba(10, 10, 14, 0.94);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 16px;
+  color: #fff;
+}
+
+.nexus-fridge-chart-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #EF4444;
+  flex-shrink: 0;
+}
+
+.nexus-fridge-chart-header-icon {
+  width: 32px;
+  height: 32px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.nexus-fridge-chart-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 1.5rem;
+}
+
+/* Single alerting channel gets the whole overlay; two get side by side -
+   FRIDGE_FREEZER_CHANNELS only ever maps 4 total, so more than 2
+   simultaneously latched is already an edge case, not a designed layout -
+   they wrap onto a second row rather than being clipped. */
+.nexus-fridge-chart-grid-1 {
+  grid-template-columns: 1fr;
+}
+
+.nexus-fridge-chart-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}

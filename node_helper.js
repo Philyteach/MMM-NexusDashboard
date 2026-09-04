@@ -78,6 +78,12 @@ function formatHourlyBuckets(periods, bucketSizeHours = 3, bucketCount = 8) {
 // coded as absent - it's not currently reporting, but the moment it does,
 // it'll need its own entry here to start alerting on it. Until then, a
 // reading on channel 5 simply matches nothing below and is ignored.
+// WH31 sensors report roughly once a minute - 10 minutes of silence means
+// the channel actually went quiet (dead battery, out of RF range), not
+// just normal poll jitter. Same threshold FridgeTempsCard.js's
+// isChannelStale uses for the deep-dive graph view.
+const FRIDGE_STALE_MS = 10 * 60 * 1000;
+
 const FRIDGE_FREEZER_CHANNELS = {
     1: { location: "Kitchen Fridge", thresholdF: 40, debounceMs: 30 * 60 * 1000 },
     2: { location: "Kitchen Freezer", thresholdF: 15, debounceMs: 45 * 60 * 1000 },
@@ -609,6 +615,22 @@ module.exports = NodeHelper.create({
         this.rtlClient.onFridgeSensorUpdate = (msg) => this.handleFridgeSensorReading(msg);
 
         this.rtlClient.start();
+
+        // Fridge/freezer channels have no per-reading watchdog like the
+        // Vevor station's onStale above - handleFridgeSensorReading only
+        // runs when a reading actually arrives, so a channel that goes
+        // silent while latched (dead WH31 battery, out of RF range) would
+        // otherwise stay latched forever with the frontend frozen on its
+        // last-known reading. This sweep re-broadcasts both fridge
+        // notifications on a timer instead, purely so their staleness
+        // (broadcastFridgeAlerts' own `stale` flag, and FridgeTempsCard/
+        // FridgeAlertChartCard's client-side isChannelStale() reading
+        // broadcastFridgeHistory's lastUpdated) actually reaches the
+        // frontend when nothing else would trigger a fresh push.
+        this.fridgeStaleSweepTimer = setInterval(() => {
+            this.broadcastFridgeAlerts();
+            this.broadcastFridgeHistory();
+        }, 60 * 1000);
     },
 
     // ---------- fridge/freezer temperature alerting ----------
@@ -711,9 +733,15 @@ module.exports = NodeHelper.create({
      * Sends the frontend every currently-latched channel. Called on every
      * fresh reading (cheap, in-process) as well as once on NEXUS_INIT so a
      * freshly-loaded/reloaded frontend replays whatever's already latched
-     * instead of waiting for the next sensor reading to find out.
+     * instead of waiting for the next sensor reading to find out, and on
+     * a fridgeStaleSweepTimer tick (see startWeatherStationClients) so a
+     * channel that's gone silent mid-latch still gets its `stale` flag
+     * pushed out - without that timer, a dead sensor would leave the
+     * frontend frozen on the last reading it ever heard, forever, since
+     * nothing else would trigger a re-broadcast for that channel again.
      */
     broadcastFridgeAlerts: function() {
+        const now = Date.now();
         const activeAlerts = Object.keys(this.fridgeAlertState)
             .filter(channel => this.fridgeAlertState[channel].latched)
             .map(channel => {
@@ -724,7 +752,9 @@ module.exports = NodeHelper.create({
                     location: config.location,
                     thresholdF: config.thresholdF,
                     currentTempF: state.lastTempF,
-                    latchedAt: state.latchedAt
+                    latchedAt: state.latchedAt,
+                    lastUpdated: state.lastUpdated ?? null,
+                    stale: state.lastUpdated != null && (now - state.lastUpdated) > FRIDGE_STALE_MS
                 };
             });
 

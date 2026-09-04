@@ -11,7 +11,7 @@
       {
         "id": "main",
         "className": "column-main-body",
-        "cards": ["ImmichCard"]
+        "cards": ["ImmichCard", "FridgeAlertChartCard"]
       }
     ]
   },

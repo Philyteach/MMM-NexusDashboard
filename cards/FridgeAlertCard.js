@@ -22,9 +22,9 @@ class FridgeAlertCard extends NexusCard {
         this.updateDom();
     }
 
-    formatDuration(latchedAtMs) {
-        if (!latchedAtMs) return null;
-        const minutes = Math.max(0, Math.round((Date.now() - latchedAtMs) / 60000));
+    formatDuration(sinceMs) {
+        if (!sinceMs) return null;
+        const minutes = Math.max(0, Math.round((Date.now() - sinceMs) / 60000));
         if (minutes < 60) return `${minutes} min`;
         const hours = Math.floor(minutes / 60);
         const remMinutes = minutes % 60;
@@ -41,13 +41,22 @@ class FridgeAlertCard extends NexusCard {
         this.domElement.className = "nexus-card nexus-fridge-alert-card";
         this.domElement.innerHTML = this.alerts.map(alert => {
             const duration = this.formatDuration(alert.latchedAt);
+            // Sensor's gone quiet since latching (dead WH31 battery, out of
+            // RF range) - node_helper.js can't tell whether the temperature
+            // ever actually recovered, so it keeps the alert latched rather
+            // than auto-clearing on silence. Surface that here instead of a
+            // live duration count that would otherwise look like an ongoing
+            // reading when it's really a frozen last-known one.
+            const staleSince = alert.stale ? this.formatDuration(alert.lastUpdated) : null;
             return `
-                <div class="nexus-fridge-alert-item">
+                <div class="nexus-fridge-alert-item${alert.stale ? " nexus-fridge-alert-stale" : ""}">
                     <img class="nexus-fridge-alert-icon" src="modules/MMM-NexusDashboard/assets/icons/warm-fridge.svg" alt="Temperature alert" />
                     <div class="nexus-fridge-alert-details">
                         <div class="nexus-fridge-alert-name">${alert.location}</div>
                         <div class="nexus-fridge-alert-temp">${Math.round(alert.currentTempF)}&deg;F <span class="nexus-fridge-alert-threshold">(above ${alert.thresholdF}&deg;F)</span></div>
-                        ${duration ? `<div class="nexus-fridge-alert-duration">Out of range ${duration}</div>` : ""}
+                        ${staleSince
+                            ? `<div class="nexus-fridge-alert-stale-notice">No data for ${staleSince} - last reading shown</div>`
+                            : duration ? `<div class="nexus-fridge-alert-duration">Out of range ${duration}</div>` : ""}
                     </div>
                 </div>
             `;
