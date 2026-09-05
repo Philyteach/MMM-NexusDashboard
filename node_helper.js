@@ -17,7 +17,7 @@ const RtlWeatherClient = require("./lib/RtlWeatherClient.js");
 const CwopClient = require("./lib/CwopClient.js");
 const PwsWeatherClient = require("./lib/PwsWeatherClient.js");
 const XweatherClient = require("./lib/XweatherClient.js");
-const LightningSensorClient = require("./lib/LightningSensorClient.js");
+const LightningMqttClient = require("./lib/LightningMqttClient.js");
 
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
@@ -162,7 +162,9 @@ module.exports = NodeHelper.create({
         // mirrors rtlConfirmed's role: lets LightningStrikeCard tell "no
         // strikes yet" apart from "no sensor hooked up at all" (School-
         // workspace-only, LIGHTNING_SENSOR_ENABLED gated - see
-        // startLightningSensor() below).
+        // startLightningSensor() below). Fed over MQTT from one or more
+        // remote ESP32 nodes now, not a locally-spawned daemon - see
+        // lib/LightningMqttClient.js.
         this.lightningStrikeCache = { sensorConfirmed: false, lastStrike: null, updatedAt: null };
         this.startLightningSensor();
 
@@ -459,63 +461,85 @@ module.exports = NodeHelper.create({
     },
 
     /**
-     * Spawns lightning_daemon.py (scripts/lightning/) and wires its events
-     * into lightningStrikeCache. School-workspace-only feature (see
-     * LightningStrikeCard.js) - off by default so the home Pi's .env can
-     * simply omit LIGHTNING_SENSOR_ENABLED and see zero behavior change.
+     * Subscribes to MQTT lightning events published by one or more ESP32
+     * "LightningNode" units (see arduino/LightningNode/, once it's checked
+     * in) - each carries its own AS3935 wired over SPI, decoupled from the
+     * Pi's own RF noise entirely (the whole reason this moved off the Pi -
+     * see git history for the earlier local-SPI-daemon version this
+     * replaced, lib/LightningSensorClient.js and scripts/lightning/).
+     * School-workspace-only feature (see LightningStrikeCard.js) - off by
+     * default so any deployment without a broker configured (e.g. this
+     * repo's Home Pi) sees zero behavior change.
      *
-     * Default command spawns the daemon in this module's own scripts/
-     * directory via a bare `python3` on PATH; LIGHTNING_SENSOR_COMMAND/
-     * LIGHTNING_SENSOR_ARGS override that per-deployment (e.g. a venv
-     * interpreter path) the same way RTL433_COMMAND/RTL433_ARGS do for
-     * rtl_433 - see startRtlWeatherClient() above.
-     *
-     * LIGHTNING_NOISE_FLOOR/LIGHTNING_WATCHDOG_THRESHOLD default to 7/10 -
-     * tuned against a board sitting on a breadboard right next to this Pi,
-     * where the factory defaults (2/2) produced hundreds of false
-     * disturber/noise events per second from the Pi's own RF noise. Lower
-     * these if the sensor ends up mounted somewhere quieter (e.g. the
-     * school deployment, if it's not sitting directly on top of the Pi).
+     * Multiple nodes can publish under the same topic prefix (e.g. "attic"
+     * at home, "school-office" at school) - sensorConfirmed just means "at
+     * least one node has been heard from," and lastStrike is the most
+     * recent real strike across all of them. Good enough for a single-card,
+     * go/no-go UI; revisit if a future card needs per-node status.
      */
     startLightningSensor: function() {
         const env = this.parseEnvFile();
         if (env.LIGHTNING_SENSOR_ENABLED !== "true") return;
+        if (!env.LIGHTNING_MQTT_URL) {
+            console.warn("[Nexus Lightning] LIGHTNING_SENSOR_ENABLED is true but LIGHTNING_MQTT_URL is missing - sensor disabled.");
+            return;
+        }
 
-        const daemonPath = path.join(__dirname, "scripts", "lightning", "lightning_daemon.py");
-        const command = env.LIGHTNING_SENSOR_COMMAND || "python3";
-        const args = env.LIGHTNING_SENSOR_ARGS
-            ? env.LIGHTNING_SENSOR_ARGS.split(" ").filter(Boolean)
-            : [
-                daemonPath,
-                "--noise-floor", env.LIGHTNING_NOISE_FLOOR || "7",
-                "--watchdog-threshold", env.LIGHTNING_WATCHDOG_THRESHOLD || "10",
-                "--irq-gpio", env.LIGHTNING_IRQ_GPIO || "17"
-            ];
+        this.lightningMqttClient = new LightningMqttClient({
+            url: env.LIGHTNING_MQTT_URL,
+            topicPrefix: env.LIGHTNING_MQTT_TOPIC_PREFIX || "nexus/lightning",
+            username: env.LIGHTNING_MQTT_USERNAME,
+            password: env.LIGHTNING_MQTT_PASSWORD,
+            staleMs: env.LIGHTNING_MQTT_STALE_MS ? parseInt(env.LIGHTNING_MQTT_STALE_MS, 10) : undefined
+        });
 
-        this.lightningSensorClient = new LightningSensorClient({ command, args });
+        this._lastNoiseLogAt = {};
 
-        this.lightningSensorClient.onReady = () => {
-            console.log("[Nexus Lightning] AS3935 calibrated and listening - sensor confirmed live.");
+        this.lightningMqttClient.onReady = () => {
+            console.log("[Nexus Lightning] First MQTT lightning node online - sensor confirmed live.");
             this.lightningStrikeCache = { ...this.lightningStrikeCache, sensorConfirmed: true, updatedAt: Date.now() };
             this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
         };
 
-        this.lightningSensorClient.onStrike = (event) => {
-            console.log(`[Nexus Lightning] Strike detected: ~${event.distance_km}km, energy ${event.energy}`);
+        this.lightningMqttClient.onStrike = (event) => {
+            console.log(`[Nexus Lightning] Strike detected from "${event.node}": ~${event.distance_km}km, energy ${event.energy}`);
             this.lightningStrikeCache = {
                 ...this.lightningStrikeCache,
                 sensorConfirmed: true,
-                lastStrike: { distanceKm: event.distance_km, energy: event.energy, ts: event.ts },
+                lastStrike: { distanceKm: event.distance_km, energy: event.energy, ts: event.ts, node: event.node },
                 updatedAt: Date.now()
             };
             this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
         };
 
         // Disturber/noise events are intentionally not broadcast to the
-        // frontend - they're expected background chatter (see the daemon's
-        // own tuning notes), not something a badge should ever surface.
+        // frontend - expected background chatter, not something a badge
+        // should surface (see LightningStrikeCard.js). Logged here at a
+        // throttled rate per node just so a noisy node stays visible in the
+        // console without drowning it - bench testing saw 10+/sec.
+        this.lightningMqttClient.onNoise = (event) => {
+            const lastLog = this._lastNoiseLogAt[event.node] || 0;
+            if (Date.now() - lastLog > 10000) {
+                this._lastNoiseLogAt[event.node] = Date.now();
+                console.log(`[Nexus Lightning] "${event.node}" reporting ${event.type} (further ${event.type} logs from this node throttled to 1/10s)`);
+            }
+        };
 
-        this.lightningSensorClient.start();
+        // No message from any node = no way to know a strike happened, so
+        // once the last node drops offline this reverts to the same "sensor
+        // offline" state the card shows before anything's ever connected.
+        this.lightningMqttClient.onNodeStatus = (nodeName, online) => {
+            console.log(`[Nexus Lightning] Node "${nodeName}" is now ${online ? "online" : "offline"}`);
+            if (!online) {
+                const anyOnline = Object.values(this.lightningMqttClient.nodes).some((n) => n.online);
+                if (!anyOnline) {
+                    this.lightningStrikeCache = { ...this.lightningStrikeCache, sensorConfirmed: false, updatedAt: Date.now() };
+                    this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
+                }
+            }
+        };
+
+        this.lightningMqttClient.start();
     },
 
     /**

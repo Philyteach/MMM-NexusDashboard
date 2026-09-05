@@ -11,17 +11,23 @@
  * specified in the original brief - flag if a badge-slot version is
  * wanted instead.
  *
- * Driven by node_helper's local AS3935 hardware sensor
+ * Driven by node_helper's AS3935 hardware sensor feed
  * (NEXUS_LIGHTNING_STRIKE) - completely separate data source from
  * LightningBadgeCard's Xweather cloud feed (NEXUS_LIGHTNING_UPDATE). This
- * one only knows about strikes the sensor itself heard, with no forecast/
+ * one only knows about strikes a sensor itself heard, with no forecast/
  * zone information, but at real-time IRQ latency instead of a poll cadence.
+ *
+ * The sensor itself lives on a remote ESP32 ("LightningNode"), not the Pi -
+ * node_helper.js subscribes over MQTT (see lib/LightningMqttClient.js)
+ * rather than spawning a local process. This card doesn't know or care
+ * about that distinction; it just renders whatever lands in
+ * lightningStrikeCache.
  *
  * Not part of the shared modes.json - added to the School deployment's own
  * (gitignored) config/school.json. LIGHTNING_SENSOR_ENABLED absent in
- * .env means node_helper never spawns the sensor daemon and this card
- * just sits in its "sensor offline" state forever - harmless on any
- * deployment that doesn't opt in.
+ * .env means node_helper never connects to a broker and this card just
+ * sits in its "sensor offline" state forever - harmless on any deployment
+ * that doesn't opt in.
  */
 class LightningStrikeCard extends NexusCard {
     start() {
@@ -74,7 +80,7 @@ class LightningStrikeCard extends NexusCard {
 
         const ageMinutes = this.lastStrike ? (Date.now() - this.lastStrike.ts) / 60000 : Infinity;
         const isActive = this.lastStrike
-            && this.lastStrike.distanceKm !== false
+            && this.lastStrike.distanceKm !== null
             && this.lastStrike.distanceKm <= distanceThresholdKm
             && ageMinutes <= activeWindowMinutes;
 

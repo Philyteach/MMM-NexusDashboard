@@ -16,9 +16,8 @@ config/travel.json
 config/stationHistory.json
 config/fridgeHistory.json
 arduino/NexusRemote/secrets.h
+arduino/LightningNode/secrets.h
 assets/icons/mascot/*.png
-# Python bytecode (scripts/lightning/)
-__pycache__/
 *.pyc
 
 # OS garbage
