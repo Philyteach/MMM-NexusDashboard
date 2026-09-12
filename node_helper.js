@@ -504,6 +504,7 @@ module.exports = NodeHelper.create({
         });
 
         this._lastNoiseLogAt = {};
+        this._lastLightningPushAt = 0;
 
         this.lightningMqttClient.onReady = () => {
             console.log("[Nexus Lightning] First MQTT lightning node online - sensor confirmed live.");
@@ -520,6 +521,15 @@ module.exports = NodeHelper.create({
                 updatedAt: Date.now()
             };
             this.sendSocketNotification("NEXUS_LIGHTNING_STRIKE", this.lightningStrikeCache);
+
+            // One push per storm, not one per strike - a single storm can
+            // throw off many strikes in quick succession, so only push on
+            // the first one seen in 30 min of quiet.
+            const now = Date.now();
+            if (now - this._lastLightningPushAt >= 30 * 60 * 1000) {
+                this._lastLightningPushAt = now;
+                this.sendLightningAlertPush(event);
+            }
         };
 
         // Disturber/noise events are intentionally not broadcast to the
@@ -760,6 +770,40 @@ module.exports = NodeHelper.create({
             console.log(`[Nexus Fridge Alert] ntfy push sent: ${message}`);
         } catch (error) {
             console.error("[Nexus Fridge Alert] ntfy push failed:", error.message);
+        }
+    },
+
+    /**
+     * One push per storm (see the 30 min cooldown in startLightningSensor's
+     * onStrike handler) rather than one per strike.
+     */
+    sendLightningAlertPush: async function(event) {
+        const env = this.parseEnvFile();
+        const host = env.LIGHTNING_NTFY_HOST || env.FRIDGE_NTFY_HOST || "835alert.work";
+        const topic = env.LIGHTNING_NTFY_TOPIC || "lightning-alerts";
+        const token = env.LIGHTNING_NTFY_TOKEN;
+        const message = event.distance_km != null
+            ? `Lightning detected ~${event.distance_km}km away (node "${event.node}")`
+            : `Lightning detected nearby - distance unavailable (node "${event.node}")`;
+
+        if (!token) {
+            console.error("[Nexus Lightning] ntfy push skipped: LIGHTNING_NTFY_TOKEN is not set in config/.env");
+            return;
+        }
+
+        try {
+            const response = await fetch(`https://${host}/${topic}`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "text/plain",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: message
+            });
+            if (!response.ok) throw new Error(`ntfy returned status ${response.status}`);
+            console.log(`[Nexus Lightning] ntfy push sent: ${message}`);
+        } catch (error) {
+            console.error("[Nexus Lightning] ntfy push failed:", error.message);
         }
     },
 
