@@ -19,6 +19,13 @@ const PwsWeatherClient = require("./lib/PwsWeatherClient.js");
 const XweatherClient = require("./lib/XweatherClient.js");
 const LightningMqttClient = require("./lib/LightningMqttClient.js");
 
+// Immich now sits behind a Cloudflare-fronted reverse proxy (photos.erinandken.net)
+// instead of a bare LAN URL. Cloudflare's bot filtering blocks Node's default
+// fetch User-Agent outright (403 "Just a moment..." challenge page) before the
+// request ever reaches Immich - this UA is just enough to look like a real
+// browser and get through.
+const IMMICH_FETCH_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+
 // Maps an NWS event name to one of the hazard icons in assets/icons/.
 // Falls back to the generic "ebs" icon for anything unmapped rather than
 // silently showing nothing.
@@ -236,7 +243,10 @@ module.exports = NodeHelper.create({
                 // "fullsize") — the old single-letter values like "L" are not a
                 // real option and were silently being ignored/rejected.
                 const response = await fetch(`${url}/api/assets/${req.params.assetId}/thumbnail?size=preview`, {
-                    headers: { "x-api-key": apiKey }
+                    // Cloudflare in front of the reverse-proxied Immich instance
+                    // blocks Node's default fetch User-Agent as a bot - a real
+                    // browser UA gets through without touching the CF config.
+                    headers: { "x-api-key": apiKey, "User-Agent": IMMICH_FETCH_USER_AGENT }
                 });
 
                 if (!response.ok) throw new Error("Failed to fetch image from Immich API.");
@@ -1338,7 +1348,11 @@ findNearestAuroraProbability: function(coordinates, lat, lon) {
                 "x-api-key": apiKey,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "Connection": "close" // Force the socket to close cleanly so Node-fetch-like engines don't panic
+                "Connection": "close", // Force the socket to close cleanly so Node-fetch-like engines don't panic
+                // Cloudflare in front of the reverse-proxied Immich instance
+                // blocks Node's default fetch User-Agent as a bot - a real
+                // browser UA gets through without touching the CF config.
+                "User-Agent": IMMICH_FETCH_USER_AGENT
             };
 
             // Cheap size:1 request purely to learn the album/library's total
