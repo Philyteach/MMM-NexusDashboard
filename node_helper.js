@@ -105,7 +105,14 @@ const FRIDGE_FREEZER_CHANNELS = {
 // timeout is right for a badge but far too twitchy for deciding whether to
 // start hitting a rate-limited paid API, so this is a separate threshold.
 const TUYA_WATCHDOG_STALE_MS = 37 * 60 * 1000; // 37 min = ~2x rtl_433's ~19min cadence, minus a minute of margin
-const TUYA_WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // check every minute
+const TUYA_WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // check every minute - in-process only, costs no API calls
+
+// How often to actually hit the Tuya cloud API while it's standing in for
+// a silent rtl_433. Tuya is a rate-limited paid API and this is a failover
+// path, not the primary source, so it polls once an hour rather than once
+// a minute. start() always fetches immediately, so a failover still shows
+// a reading right away - the interval only governs the refreshes after it.
+const TUYA_FAILOVER_POLL_MS = 60 * 60 * 1000; // 1 hour
 
 // YYYY-MM-DD in local time - used to detect a day rollover for the
 // station's daily high/low and rain-since-midnight baseline.
@@ -376,7 +383,7 @@ module.exports = NodeHelper.create({
      */
     startTuyaPolling: function() {
         if (!this.tuyaClient || this.tuyaRunning) return;
-        console.log("[Nexus Station][Tuya] Starting Tuya cloud polling.");
+        console.log(`[Nexus Station][Tuya] Starting Tuya cloud polling (every ${Math.round(this.tuyaClient.pollIntervalMs / 60000)} min).`);
         this.tuyaClient.start();
         this.tuyaRunning = true;
     },
@@ -580,15 +587,24 @@ module.exports = NodeHelper.create({
             clientSecret: env.TUYA_CLIENT_SECRET,
             deviceId: env.TUYA_DEVICE_ID,
             baseUrl: (env.TUYA_BASE_URL || "https://openapi.tuyaus.com").trim(),
-            pollIntervalMs: parseInt(env.TUYA_POLL_INTERVAL_MS || "60000", 10)
+            // Defaults to the hourly failover rate; TUYA_POLL_INTERVAL_MS in
+            // .env still overrides it (e.g. to poll faster on a box with no
+            // SDR dongle, where Tuya is the only station source there is).
+            pollIntervalMs: parseInt(env.TUYA_POLL_INTERVAL_MS || String(TUYA_FAILOVER_POLL_MS), 10)
         });
 
         this.tuyaClient.onUpdate = (reading) => {
-            // Once rtl_433 is confirmed live, startTuyaPolling actually
-            // stops this client (see stopTuyaPolling/the watchdog above),
-            // so this guard is mostly a safety net for the brief window
-            // between rtl_433 recovering and stopTuyaPolling() landing.
-            if (this.rtlConfirmed) return;
+            // Gate on "is Tuya currently the active source", NOT on
+            // rtlConfirmed. rtlConfirmed latches true on the first rtl_433
+            // reading and is never reset, so gating on it meant that once
+            // rtl_433 had worked even once, every later watchdog failover
+            // fetched from Tuya and then threw the result away - burning
+            // API calls while the dashboard kept showing stale rtl_433
+            // data for the whole outage. tuyaRunning tracks the actual
+            // failover state, and stopTuyaPolling() clears it the moment
+            // rtl_433 recovers, so this still ignores any in-flight poll
+            // that lands after the handover.
+            if (!this.tuyaRunning) return;
             this.stationCache = { ...this.stationCache, ...reading };
             console.log(`[Nexus Station][Tuya] Poll OK: ${reading.outdoorTempF?.toFixed(1)}\u00b0F outdoor, ${reading.indoorTempF?.toFixed(1)}\u00b0F indoor (sensorOnline=${reading.sensorOnline})`);
             this.recordStationSnapshot(this.stationCache);
@@ -1066,7 +1082,10 @@ module.exports = NodeHelper.create({
         this.sendSocketNotification("NEXUS_STATION_DATA", {
             ...this.stationCache,
             ...this.computeStationExtras(),
-            stationSource: this.rtlConfirmed ? "rtl_433" : "tuya"
+            // Reflects which source is live right now, not merely whether
+            // rtl_433 has ever reported - during a failover rtlConfirmed is
+            // still true but Tuya is the one supplying these numbers.
+            stationSource: this.tuyaRunning ? "tuya" : "rtl_433"
         });
     },
 
