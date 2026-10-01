@@ -114,6 +114,17 @@ const TUYA_WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // check every minute - in-pr
 // a reading right away - the interval only governs the refreshes after it.
 const TUYA_FAILOVER_POLL_MS = 60 * 60 * 1000; // 1 hour
 
+// Floor on how often the boot-time Tuya fetch may actually fire, persisted
+// to disk so it survives a process restart. Backstop for the kind of
+// crash-restart loop the Sept 30 Wayland-socket boot race caused: pm2 was
+// relaunching the whole process every few seconds, and since
+// startTuyaWeatherClient() fires an immediate fetch on every single start,
+// each restart was its own fresh Tuya API call - the systemd fix (waiting
+// for the Wayland socket before `pm2 resurrect`) addresses that race
+// directly, but this stops the next unrelated crash loop from doing the
+// same thing again before anyone notices.
+const TUYA_BOOT_FETCH_MIN_SPACING_MS = 5 * 60 * 1000; // 5 min
+
 // YYYY-MM-DD in local time - used to detect a day rollover for the
 // station's daily high/low and rain-since-midnight baseline.
 function localDateString(date = new Date()) {
@@ -611,7 +622,22 @@ module.exports = NodeHelper.create({
             this.broadcastStationData();
         };
 
-        this.startTuyaPolling();
+        // Gate the boot-time fetch itself (not just the hourly interval
+        // after it) against the persisted floor - see
+        // TUYA_BOOT_FETCH_MIN_SPACING_MS above. A normal single boot always
+        // clears this instantly (lastBootFetchAt is long in the past), so
+        // this only ever bites during a rapid crash-restart loop.
+        this.tuyaPollState = this.loadTuyaPollState();
+        const sinceLastBootFetch = Date.now() - (this.tuyaPollState.lastBootFetchAt || 0);
+        const bootFetchDelayMs = Math.max(0, TUYA_BOOT_FETCH_MIN_SPACING_MS - sinceLastBootFetch);
+        if (bootFetchDelayMs > 0) {
+            console.warn(`[Nexus Station][Tuya] Last boot fetch was only ${Math.round(sinceLastBootFetch / 1000)}s ago - delaying this one ${Math.round(bootFetchDelayMs / 1000)}s (crash-loop guard).`);
+        }
+        setTimeout(() => {
+            this.tuyaPollState.lastBootFetchAt = Date.now();
+            this.saveTuyaPollState();
+            this.startTuyaPolling();
+        }, bootFetchDelayMs);
     },
 
     /**
@@ -934,6 +960,30 @@ module.exports = NodeHelper.create({
     // alone, so this small persisted file is the only place any of that
     // history lives. Mirrors the loadPredictions()/savePredictions()
     // pattern already used for travel.json.
+
+    // Tracks only the timestamp of the last attempted boot-time Tuya fetch -
+    // see TUYA_BOOT_FETCH_MIN_SPACING_MS above for why this exists. Mirrors
+    // the loadStationHistory()/saveStationHistory() pattern below.
+    loadTuyaPollState: function() {
+        const statePath = path.join(this.configPath, "tuyaPollState.json");
+        if (!fs.existsSync(statePath)) return { lastBootFetchAt: null };
+        try {
+            const parsed = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+            return { lastBootFetchAt: parsed.lastBootFetchAt ?? null };
+        } catch (error) {
+            console.error("[Nexus Station][Tuya] Failed to read tuyaPollState.json, starting fresh:", error.message);
+            return { lastBootFetchAt: null };
+        }
+    },
+
+    saveTuyaPollState: function() {
+        const statePath = path.join(this.configPath, "tuyaPollState.json");
+        try {
+            fs.writeFileSync(statePath, JSON.stringify(this.tuyaPollState, null, 2), "utf-8");
+        } catch (error) {
+            console.error("[Nexus Station][Tuya] Failed to write tuyaPollState.json:", error.message);
+        }
+    },
 
     loadStationHistory: function() {
         const historyPath = path.join(this.configPath, "stationHistory.json");

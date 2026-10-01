@@ -4,5 +4,8 @@
   "description": "A modern dashboard framework for MagicMirror²",
   "main": "MMM-NexusDashboard.js",
   "author": "Ken Christy",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^5.15.2"
+  }
 }
